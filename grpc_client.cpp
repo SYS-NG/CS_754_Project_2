@@ -23,21 +23,43 @@ class FuseGrpcClient {
         FuseGrpcClient(shared_ptr<Channel> channel) {
             stub_     = GrpcService::NewStub(channel);
             instance_ = this;
+
+            // Pings server
+            ClientContext context;
+            PingRequest request;
+            PingResponse response;
+
+            request.set_message("Ping");
+            Status status = stub_->Ping(&context, request, &response);
+
+            if (status.ok()) {
+                cout << "Ping successful: " << response.message() << endl;
+            } else {
+                cerr << "Ping failed: " << status.error_code() << " - " << status.error_message() << endl;
+            }
         }
 
         static int nfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
             cout << "Getting attributes for path: " << path << endl;
             memset(stbuf, 0, sizeof(struct stat));
-            if (strcmp(path, "/") == 0) { // root directory
-                stbuf->st_mode = S_IFDIR | 0755;
-                stbuf->st_nlink = 2;
-            } else if (strcmp(path, "/testfile") == 0) { // file path
-                stbuf->st_mode = S_IFREG | 0444;
-                stbuf->st_nlink = 1;
-                stbuf->st_size = strlen("Testing Testing!\n");
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsGetAttrRequest request;
+            NfsGetAttrResponse response;
+
+            request.set_path(path);
+            Status status = instance_->stub_->NfsGetAttr(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                stbuf->st_mode = response.mode();
+                stbuf->st_nlink = response.nlink();
+                stbuf->st_size = response.size();
             } else {
+                cerr << "gRPC NfsGetAttr failed: " << status.error_code() << " - " << status.error_message() << endl;
                 return -ENOENT;
             }
+
             return 0;
         }
 
@@ -96,13 +118,22 @@ class FuseGrpcClient {
 FuseGrpcClient* FuseGrpcClient::instance_ = nullptr;
 
 int main(int argc, char** argv) {
-    string target_str = "0.0.0.0:50051";
-    if (argc > 1) {
-        target_str = argv[1];
+    // Check if the first argument is provided
+    if (argc < 2) {
+        cerr << "Usage: " << argv[0] << " <server_ip:port> [additional_arguments]" << endl;
+        return 1;
     }
 
+    string target_str = argv[1]; // Expecting server ip address:port
+
+    // Create the gRPC client
     FuseGrpcClient client(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-    client.run_fuse_main(argc, argv);
+
+
+    
+    // Pass the rest of the arguments to run_fuse_main
+    // Reduce the argument count by 1, and move the argument pointer to the next arg
+    client.run_fuse_main(argc - 1, argv + 1);
 
     return 0;
 }

@@ -54,6 +54,24 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             }
         }
 
+        Status NfsGetAttr(
+            ServerContext* context,
+            const grpc_service::NfsGetAttrRequest* request,
+            grpc_service::NfsGetAttrResponse* response
+        ) override {
+            const std::string path = request->path();
+            struct stat st;
+            if (stat((directory_path_ + path).c_str(), &st) != 0) {
+                response->set_success(false);
+                response->set_message("File not found");
+                return Status::OK;
+            }
+            response->set_success(true);
+            response->set_size(st.st_size);
+            response->set_mode(st.st_mode);
+            response->set_nlink(st.st_nlink);
+            return Status::OK;
+        }
 
         Status ServerStreamData(
             ServerContext* context,
@@ -139,6 +157,8 @@ void RunServer(string remote_storage_dir_path) {
         cerr << "Error: " << remote_storage_dir_path << " is not a directory." << endl;
         return;
     }
+
+    cout << "Running Storage at: " << remote_storage_dir_path << endl;
 
     // Create GRPC Server
     string server_address = getServerIP() + ":50051";

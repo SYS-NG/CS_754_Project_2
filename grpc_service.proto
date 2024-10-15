@@ -7,6 +7,7 @@ service GrpcService {
   rpc ServerStreamData (DataRequest) returns (stream DataChunk) {}
   rpc ClientStreamData (stream DataChunk) returns (TransferStatus) {}
   rpc SendAndWaitAck (DataChunk) returns (PingResponse) {}
+  rpc NfsGetAttr (NfsGetAttrRequest) returns (NfsGetAttrResponse) {} // Added NfsGetAttr RPC
 }
 
 message PingRequest {
@@ -28,4 +29,17 @@ message TransferStatus {
 
 message DataRequest {
   int64 size = 1;
+}
+
+// New messages for NfsGetAttr
+message NfsGetAttrRequest {
+  string path = 1; // Path for which attributes are requested
+}
+
+message NfsGetAttrResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+  int64 size = 3; // Size of the file
+  int32 mode = 4; // File mode (permissions)
+  int32 nlink = 5; // Number of hard links
 }
