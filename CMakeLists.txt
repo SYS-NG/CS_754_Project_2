@@ -56,7 +56,10 @@ add_executable(fuse_client
 
 # Include generated files
 target_include_directories(grpc_server PRIVATE ${GENERATED_PROTOBUF_PATH})
+
 target_include_directories(grpc_client PRIVATE ${GENERATED_PROTOBUF_PATH})
+target_include_directories(grpc_client PRIVATE ${FUSE_INCLUDE_DIR})
+
 target_include_directories(fuse_client PRIVATE ${FUSE_INCLUDE_DIR})
 
 # Link against gRPC and Protobuf libraries
