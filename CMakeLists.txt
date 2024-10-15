@@ -4,12 +4,15 @@ project(grpc_server_client)
 set(CMAKE_CXX_STANDARD 14)
 
 # Add this line to help find packages installed by vcpkg
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "/u6/s46ng/vcpkg/installed/x64-linux")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "$ENV{HOME}/vcpkg/installed/x64-linux")
 
 # Find required packages
 find_package(gRPC CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 
+# Explicitly set FUSE3 paths
+set(FUSE_INCLUDE_DIR "$ENV{HOME}/vcpkg/installed/x64-linux/include")
+set(FUSE_LIBRARY "$ENV{HOME}/vcpkg/installed/x64-linux/lib/libfuse3.a")
 # Generate gRPC and Protobuf files
 set(PROTO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/grpc_service.proto")
 get_filename_component(PROTO_FILE_ABS "${PROTO_FILE}" ABSOLUTE)
@@ -47,9 +50,14 @@ add_executable(grpc_client
     ${GENERATED_PROTO_SOURCES}
 )
 
+add_executable(fuse_client 
+    fuse_client.cpp
+)
+
 # Include generated files
 target_include_directories(grpc_server PRIVATE ${GENERATED_PROTOBUF_PATH})
 target_include_directories(grpc_client PRIVATE ${GENERATED_PROTOBUF_PATH})
+target_include_directories(fuse_client PRIVATE ${FUSE_INCLUDE_DIR})
 
 # Link against gRPC and Protobuf libraries
 target_link_libraries(grpc_server
@@ -60,4 +68,9 @@ target_link_libraries(grpc_server
 target_link_libraries(grpc_client
     PRIVATE gRPC::grpc++
     PRIVATE protobuf::libprotobuf
+    PRIVATE ${FUSE_LIBRARY}
+)
+
+target_link_libraries(fuse_client
+    PRIVATE ${FUSE_LIBRARY}
 )
