@@ -9,6 +9,10 @@ service GrpcService {
   rpc NfsRead (NfsReadRequest) returns (NfsReadResponse) {} 
   rpc NfsOpen (NfsOpenRequest) returns (NfsOpenResponse) {} 
   rpc NfsRelease (NfsReleaseRequest) returns (NfsReleaseResponse) {}
+  rpc NfsUnlink (NfsUnlinkRequest) returns (NfsUnlinkResponse) {}
+  rpc NfsRmdir (NfsRmdirRequest) returns (NfsRmdirResponse) {}
+  rpc NfsCreate (NfsCreateRequest) returns (NfsCreateResponse) {}
+  rpc NfsUtimens (NfsUtimensRequest) returns (NfsUtimensResponse) {}
 }
 
 message PingRequest {
@@ -90,6 +94,66 @@ message NfsReleaseRequest {
 }
 
 message NfsReleaseResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+}
+
+//======================================================================
+// New messages for NfsUnlink
+message NfsUnlinkRequest {
+  string path = 1; // Path of the file to unlink
+}
+
+message NfsUnlinkResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+}
+
+//======================================================================
+// New messages for NfsRmdir
+message NfsRmdirRequest {
+  string path = 1; // Path of the directory to remove
+}
+
+message NfsRmdirResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+}
+
+//======================================================================
+// New messages for NfsCreate
+message NfsCreateRequest {
+  string path = 1;
+  int32 mode = 2; 
+}
+
+message NfsCreateResponse {
+  bool success = 1;
+  string message = 2;
+  int64 filehandle = 3;
+}
+
+//======================================================================
+// New messages for NfsUtimens
+message NfsUtimensRequest {
+  string path = 1;
+  int64 atime = 2;
+  int64 mtime = 3;
+}
+
+message NfsUtimensResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+//======================================================================
+// New messages for NfsMkdir
+message NfsMkdirRequest {
+  string path = 1; // Path of the directory to create
+  int32 mode = 2;  // Directory mode (permissions)
+}
+
+message NfsMkdirResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
 }

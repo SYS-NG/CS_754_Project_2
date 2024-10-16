@@ -172,6 +172,101 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             return Status::OK;
         }
+
+        Status NfsUnlink(
+            ServerContext* context,
+            const grpc_service::NfsUnlinkRequest* request,
+            grpc_service::NfsUnlinkResponse* response
+        ) override {
+            const std::string path = request->path();
+            cout << "NfsUnlink called with path: " << path << endl; // Debug log
+
+            if (unlink((directory_path_ + path).c_str()) == 0) {
+                cout << "File unlinked successfully: " << path << endl;
+                response->set_success(true);
+                response->set_message("File unlinked successfully");
+            } else {
+                cerr << "Failed to unlink file: " << path << " - " << strerror(errno) << endl;
+                response->set_success(false);
+                response->set_message("File unlink failed");
+            }
+            return Status::OK;
+        }
+
+        Status NfsRmdir(
+            ServerContext* context,
+            const grpc_service::NfsRmdirRequest* request,
+            grpc_service::NfsRmdirResponse* response
+        ) override {
+            const std::string path = request->path();
+            cout << "NfsRmdir called with path: " << path << endl; // Debug log
+
+            // Perform rmdir operation
+            if (rmdir((directory_path_ + path).c_str()) == 0) {
+                cout << "Directory removed successfully: " << path << endl;
+                response->set_success(true);
+                response->set_message("Directory removed successfully");
+            } else {
+                cerr << "Failed to remove directory: " << path << " - " << strerror(errno) << endl;
+                response->set_success(false);
+                response->set_message("Directory removal failed");
+            }
+
+            return Status::OK;
+        }
+
+        Status NfsCreate(
+            ServerContext* context,
+            const grpc_service::NfsCreateRequest* request,
+            grpc_service::NfsCreateResponse* response
+        ) override {
+            const std::string path = request->path();
+            mode_t mode = request->mode();
+            cout << "NfsCreate called with path: " << path << " and mode: " << oct << mode << endl;
+
+            int file_descriptor = open((directory_path_ + path).c_str(), O_CREAT | O_WRONLY, mode);
+            if (file_descriptor < 0) {
+                cerr << "Failed to create file: " << path << endl;
+                response->set_success(false);
+                response->set_message("File creation failed");
+                return Status::OK;
+            }
+
+            cout << "File created successfully: " << path << endl;
+            response->set_success(true);
+            response->set_message("File created successfully");
+            response->set_filehandle(file_descriptor);
+            return Status::OK;
+        }
+
+        Status NfsUtimens(
+            ServerContext* context,
+            const grpc_service::NfsUtimensRequest* request,
+            grpc_service::NfsUtimensResponse* response
+        ) override {
+            const std::string path = request->path();
+            struct timespec times[2];
+
+            // Setting the access time (atime)
+            times[0].tv_sec = request->atime();
+            times[0].tv_nsec = 0;
+
+            // Setting the modification time (mtime)
+            times[1].tv_sec = request->mtime();
+            times[1].tv_nsec = 0;
+
+            if (utimensat(AT_FDCWD, (directory_path_ + path).c_str(), times, 0) == 0) {
+                response->set_success(true);
+                response->set_message("Timestamps updated successfully");
+                cout << "Timestamps for " << path << " updated successfully." << endl;
+            } else {
+                response->set_success(false);
+                response->set_message("Failed to update timestamps");
+                cerr << "Failed to update timestamps for " << path << endl;
+            }
+
+            return Status::OK;
+        }
 };
 
 std::string getServerIP() {

@@ -162,14 +162,107 @@ class FuseGrpcClient {
             return 0;
         }
 
+        static int nfs_unlink(const char *path) {
+            cout << "Unlinking file: " << path << endl;
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsUnlinkRequest request;
+            NfsUnlinkResponse response;
+
+            request.set_path(path);
+            Status status = instance_->stub_->NfsUnlink(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                cout << "File unlinked successfully: " << path << endl;
+                return 0; // File unlinked successfully
+            } else {
+                cerr << "gRPC NfsUnlink failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -ENOENT; // Unlink failed
+            }
+        }
+
+        static int nfs_rmdir(const char *path) {
+            cout << "Removing directory: " << path << endl;
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsRmdirRequest request;
+            NfsRmdirResponse response;
+
+            request.set_path(path);
+            Status status = instance_->stub_->NfsRmdir(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                cout << "Directory removed successfully: " << path << endl;
+                return 0; // Directory removed successfully
+            } else {
+                cerr << "gRPC NfsRmdir failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -ENOENT; // Remove failed
+            }
+        }
+
+        static int nfs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
+            cout << "Creating file: " << path << " with mode: " << oct << mode << endl;
+
+            if (mode == 0) {
+                mode = 0666;
+            }
+
+            ClientContext context;
+            NfsCreateRequest request;
+            NfsCreateResponse response;
+
+            request.set_path(path);
+            request.set_mode(mode);
+            Status status = instance_->stub_->NfsCreate(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                cout << "File created successfully: " << path << endl;
+                fi->fh = response.filehandle();
+                return 0;
+            } else {
+                cerr << "gRPC NfsCreate failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -ENOENT;
+            }
+        }
+
+
+        static int nfs_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
+            cout << "Updating timestamps for path: " << path << endl;
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsUtimensRequest request;
+            NfsUtimensResponse response;
+
+            request.set_path(path);
+            request.set_atime(tv[0].tv_sec);  // Set access time from tv[0]
+            request.set_mtime(tv[1].tv_sec);  // Set modification time from tv[1]
+
+            Status status = instance_->stub_->NfsUtimens(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                cout << "Timestamps updated successfully for path: " << path << endl;
+                return 0; // Success
+            } else {
+                cerr << "gRPC NfsUtimens failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -ENOENT; // Error occurred
+            }
+        }
+
         void run_fuse_main(int argc, char** argv)
         {
             static struct fuse_operations nfs_oper = {
                 .getattr = nfs_getattr,
+                .unlink  = nfs_unlink,
+                .rmdir   = nfs_rmdir,
                 .open    = nfs_open,
                 .read    = nfs_read,
                 .release = nfs_release,
                 .readdir = nfs_readdir,
+                .create  = nfs_create,
+                .utimens = nfs_utimens,
             };
 
             fuse_main(argc, argv, &nfs_oper, NULL);
