@@ -251,10 +251,35 @@ class FuseGrpcClient {
             }
         }
 
+        static int nfs_mkdir(const char *path, mode_t mode) {
+            if (mode == 0) {
+                mode = 0755;
+            }
+            cout << "Creating directory: " << path << " with mode: " << mode << endl;
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsMkdirRequest request;
+            NfsMkdirResponse response;
+
+            request.set_path(path);
+            request.set_mode(mode);
+            Status status = instance_->stub_->NfsMkdir(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                cout << "Directory created successfully: " << path << endl;
+                return 0; // Directory created successfully
+            } else {
+                cerr << "gRPC NfsMkdir failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EACCES; // Failed to create directory
+            }
+        }
+
         void run_fuse_main(int argc, char** argv)
         {
             static struct fuse_operations nfs_oper = {
                 .getattr = nfs_getattr,
+                .mkdir   = nfs_mkdir,
                 .unlink  = nfs_unlink,
                 .rmdir   = nfs_rmdir,
                 .open    = nfs_open,

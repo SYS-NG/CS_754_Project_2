@@ -267,6 +267,30 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             return Status::OK;
         }
+
+        Status NfsMkdir(
+            ServerContext* context,
+            const grpc_service::NfsMkdirRequest* request,
+            grpc_service::NfsMkdirResponse* response
+        ) override {
+            const std::string path = request->path();
+            mode_t mode = request->mode();
+
+            cout << "NfsMkdir called with path: " << path << " and mode: " << mode << endl; // Debug log
+
+            // Create the directory using mkdir system call
+            if (mkdir((directory_path_ + path).c_str(), mode) == 0) {
+                response->set_success(true);
+                response->set_message("Directory created successfully");
+                cout << "Directory created: " << path << endl;
+            } else {
+                response->set_success(false);
+                response->set_message("Failed to create directory: " + std::string(strerror(errno)));
+                cerr << "Failed to create directory: " << path << " - " << strerror(errno) << endl;
+            }
+
+            return Status::OK;
+        }
 };
 
 std::string getServerIP() {
