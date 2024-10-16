@@ -65,25 +65,54 @@ class FuseGrpcClient {
 
         static int nfs_open(const char *path, struct fuse_file_info *fi) {
             cout << "Opening file: " << path << endl;
-            if (strcmp(path, "/testfile") != 0)
-                return -ENOENT;
-            return 0;
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsOpenRequest request;
+            NfsOpenResponse response;
+
+            request.set_path(path);
+            Status status = instance_->stub_->NfsOpen(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                return 0; // File opened successfully
+            } else {
+                cerr << "gRPC NfsOpen failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -ENOENT; // File not found
+            }
         }
 
         static int nfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
             cout << "Reading file: " << path << endl;
-            const char *file_content = "Testing Testing!\n";
-            size_t len = strlen(file_content);
-            if (strcmp(path, "/testfile") != 0)
-                return -ENOENT;
+            
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsReadRequest request;
+            NfsReadResponse response;
 
-            if (offset < len) {
-                if (offset + size > len)
-                    size = len - offset;
-                memcpy(buf, file_content + offset, size);
+            request.set_path(path);
+            Status status = instance_->stub_->NfsRead(&context, request, &response);
+
+            int64_t len;
+
+            if (status.ok() && response.success()) {
+                size = response.size();
+
+                if (offset < len) {
+                    if (offset + size > len)
+                        size = len - offset;
+                    len = response.size(); // Get the length of the content
+                    cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
+                    cout << "Content: " << response.content() << endl; // Log the content read
+                    memcpy(buf, response.content().data() + offset, size);
+                } else {
+                    size = 0;
+                }
             } else {
-                size = 0;
+                cerr << "gRPC NfsRead failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -ENOENT;
             }
+
             return size;
         }
 
@@ -101,6 +130,7 @@ class FuseGrpcClient {
             if (status.ok() && response.success()) {
                 // Add files from the response
                 for (const auto& file : response.files()) {
+                    cout <<  file.c_str() << endl;
                     filler(buf, file.c_str(), NULL, 0, FUSE_FILL_DIR_PLUS);
                 }
             } else {

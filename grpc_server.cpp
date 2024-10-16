@@ -15,6 +15,9 @@
 // Directory Manipulating
 #include <dirent.h>
 
+// File Handler
+#include <fstream>
+
 using grpc::Status;
 using grpc::ServerContext;
 using grpc::ServerBuilder;
@@ -82,6 +85,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 // DT_REG = regular file
                 // DT_DIR = directory
                 if (entry->d_type == DT_REG || entry->d_type == DT_DIR) {
+                    cout << entry->d_name << endl;
                     response->add_files(entry->d_name);
                 }
             }
@@ -89,38 +93,71 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             return Status::OK;
         }
 
-        Status ServerStreamData(
+        Status NfsRead(
             ServerContext* context,
-            const grpc_service::DataRequest* request,
-            ServerWriter<grpc_service::DataChunk>* writer
+            const grpc_service::NfsReadRequest* request,
+            grpc_service::NfsReadResponse* response
         ) override {
-            int64_t remaining_size = request->size();
-            grpc_service::DataChunk chunk;
-            int64_t normal_chunk_size = MB_CHUNK;
-            string data(normal_chunk_size, 'a');  // 1MB chunk
-            int64_t chunk_size = min(remaining_size, normal_chunk_size);
+            const std::string path = request->path();
+            cout << "NfsRead called with path: " << path << endl; // Debug log
             
-            while (remaining_size > 0) {
-                chunk_size = min(remaining_size, normal_chunk_size);
-                chunk.set_data(data.substr(0, chunk_size));
-                writer->Write(chunk);
-                remaining_size -= chunk_size;
+            ifstream file(directory_path_ + path, ios::binary); // Open file in binary mode
+            if (!file) {
+                cerr << "File not found: " << directory_path_ + path << endl; // Debug log
+                response->set_success(false);
+                response->set_message("File not found");
+                return Status::OK;
             }
+
+            // Get the size of the file
+            file.seekg(0, std::ios::end); // Move to the end to get the size
+            std::streamsize size = file.tellg();
+            file.seekg(0, std::ios::beg); // Move back to the beginning
+            cout << "File size determined: " << size << " bytes" << endl; // Debug log
+
+            // Update Size for the return message
+            response->set_size(size);
+
+            // Allocate a buffer to hold the file content
+            std::vector<char> buffer(size);
+            // Read the file into the buffer
+            if (file.read(buffer.data(), size)) {
+                response->set_success(true);
+                response->set_message("File Read successfully");
+                cout << "File read successfully: " << path << endl; // Debug log
+                response->set_content(std::string(buffer.data(), size)); // Use buffer.data() and size
+                cout << "File content: " << response->content() << endl; // Debug log
+            } else {
+                response->set_success(false);
+                response->set_message("File Read Failed");
+                cerr << "Failed to read file: " << path << endl; // Debug log
+            }  
+
+            file.close();
             return Status::OK;
         }
 
-        Status ClientStreamData(
+        Status NfsOpen(
             ServerContext* context,
-            ServerReader<grpc_service::DataChunk>* reader,
-            grpc_service::TransferStatus* status
+            const grpc_service::NfsOpenRequest* request,
+            grpc_service::NfsOpenResponse* response
         ) override {
-            grpc_service::DataChunk chunk;
-            int64_t total_bytes = 0;
-            while (reader->Read(&chunk)) {
-                total_bytes += chunk.data().size();
+            const std::string path = request->path();
+            cout << "NfsOpen called with path: " << path << endl; // Debug log
+
+            // Check if the file exists
+            ifstream file(directory_path_ + path);
+            if (!file) {
+                cout << "File not found: " << path << endl; // Debug log
+                response->set_success(false);
+                response->set_message("File not found");
+                return Status::OK;
             }
-            status->set_success(true);
-            status->set_bytes_received(total_bytes);
+
+            // If the file exists, we can open it successfully
+            cout << "File opened successfully: " << path << endl; // Debug log
+            response->set_success(true);
+            response->set_message("File opened successfully");
             return Status::OK;
         }
 };

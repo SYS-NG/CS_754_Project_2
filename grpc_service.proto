@@ -4,11 +4,11 @@ package grpc_service;
 
 service GrpcService {
   rpc Ping (PingRequest) returns (PingResponse) {}
-  rpc ServerStreamData (DataRequest) returns (stream DataChunk) {}
-  rpc ClientStreamData (stream DataChunk) returns (TransferStatus) {}
-  rpc NfsGetAttr (NfsGetAttrRequest) returns (NfsGetAttrResponse) {} // Added NfsGetAttr RPC
-  rpc NfsReadDir (NfsReadDirRequest) returns (NfsReadDirResponse) {} // Added NfsReadDir RPC
-}
+  rpc NfsGetAttr (NfsGetAttrRequest) returns (NfsGetAttrResponse) {} 
+  rpc NfsReadDir (NfsReadDirRequest) returns (NfsReadDirResponse) {} 
+  rpc NfsRead    (NfsReadRequest)    returns (NfsReadResponse)    {} 
+  rpc NfsOpen (NfsOpenRequest) returns (NfsOpenResponse) {} 
+ }
 
 message PingRequest {
   string message = 1;
@@ -55,4 +55,28 @@ message NfsReadDirResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
   repeated string files = 3; // List of files in the directory
+}
+
+//======================================================================
+// New messages for NfsRead
+message NfsReadRequest {
+  string path = 1; // Path of the file to read
+}
+
+message NfsReadResponse {
+  bool success = 1;   // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+  string content = 3; // Content of the file
+  int64 size = 4;
+}
+
+//======================================================================
+// New messages for NfsOpen
+message NfsOpenRequest {
+  string path = 1; // Path of the file to open
+}
+
+message NfsOpenResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
 }
