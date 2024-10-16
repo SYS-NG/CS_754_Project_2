@@ -29,6 +29,7 @@ using namespace std;
 class grpcServices final : public grpc_service::GrpcService::Service {
     private:
         std::string directory_path_; // Where All the files will get mounted
+        std::unordered_map<int, std::string> file_descriptor_map_; // Maps file descriptors to their content buffers
 
     public: 
         grpcServices(const std::string& directory_path) : directory_path_(directory_path) {}
@@ -98,6 +99,9 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             grpc_service::NfsReadResponse* response
         ) override {
             int file_descriptor = request->filedescriptor(); // Get the file descriptor from the request
+            off_t offset = request->offset();
+            off_t size   = request->size();
+
             cout << "NfsRead called with file descriptor: " << file_descriptor << endl; // Debug log
             
             struct stat st;
@@ -108,24 +112,35 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 response->set_message("File status retrieval failed");
                 return Status::OK;
             }
+            
+            int fileSize = st.st_size;
 
-            response->set_size(st.st_size); // Set the size from fstat
+            if (offset >= fileSize) {
+                response->set_success(false);
+                response->set_errorcode(0); // No data to read
+                response->set_message("Offset is beyond the file size");
+                return Status::OK;
+            }
+            if (size > fileSize - offset) {
+                size = fileSize - offset; // Adjust size to read only up to the file size
+            }
 
-            // Allocate a buffer to hold the file content
-            std::vector<char> buffer(st.st_size);
-            ssize_t bytes_read = pread(file_descriptor, buffer.data(), buffer.size(), 0); // Read from the file descriptor
+            std::vector<char> buffer(size);
+            ssize_t bytes_read = pread(file_descriptor, buffer.data(), size, offset); // Read from the file descriptor
             
             if (bytes_read < 0) {
                 cerr << "Failed to read file descriptor: " << file_descriptor << endl; // Debug log
                 response->set_success(false);
                 response->set_message("File Read Failed");
+                response->set_errorcode(errno);
                 return Status::OK;
             }
 
+            response->set_size(bytes_read);
             response->set_success(true);
             response->set_message("File Read successfully");
-            response->set_content(std::string(buffer.data(), bytes_read)); // Use buffer.data() and bytes_read
-            cout << "File content: " << response->content() << endl; // Debug log
+            response->set_content(std::string(buffer.data(), bytes_read));
+            cout << "File content: " << response->content() << endl;
 
             return Status::OK;
         }
@@ -211,6 +226,35 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_success(true);
             response->set_message("File written successfully");
             response->set_bytes_written(bytes_written); // Return the number of bytes written
+            return Status::OK;
+        }
+
+        Status NfsAsyncWrite(
+            ServerContext* context,
+            const grpc_service::NfsAsyncWriteRequest* request,
+            grpc_service::NfsAsyncWriteResponse* response
+        ) override {
+            int file_descriptor = request->filedescriptor();
+            const std::string data = request->data();
+            int64_t offset = request->offset();
+            int32_t size = request->size();
+
+            cout << "NfsAsyncWrite invoked with file descriptor: " << file_descriptor 
+                 << ", data size: " << size << ", and offset: " << offset << endl; // Debug log
+
+            // Check if the file descriptor is valid
+            if (file_descriptor < 0) {
+                cerr << "Invalid file descriptor: " << file_descriptor << endl;
+                response->set_success(false);
+                response->set_message("Invalid file descriptor");
+                return Status::OK;
+            }
+        
+            //TODO: Buffer Logic
+
+            response->set_success(true);
+            response->set_message("Data buffered successfully");
+            response->set_bytes_written(size); // Return the number of bytes intended to be written
             return Status::OK;
         }
 

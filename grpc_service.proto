@@ -15,6 +15,7 @@ service GrpcService {
   rpc NfsCreate (NfsCreateRequest) returns (NfsCreateResponse) {}
   rpc NfsUtimens (NfsUtimensRequest) returns (NfsUtimensResponse) {}
   rpc NfsMkdir (NfsMkdirRequest) returns (NfsMkdirResponse) {} 
+  rpc NfsAsyncWrite (NfsAsyncWriteRequest) returns (NfsAsyncWriteResponse) {}
 }
 
 message PingRequest {
@@ -70,6 +71,8 @@ message NfsReadDirResponse {
 // New messages for NfsRead
 message NfsReadRequest {
   int64 filedescriptor = 1; // File handle to read
+  int64 offset = 2;
+  int64 size   = 3;
 }
 
 message NfsReadResponse {
@@ -182,3 +185,21 @@ message NfsMkdirResponse {
   string message = 2;
   int32 errorcode = 3; // System error number if operation failed
 }
+
+//======================================================================
+// New messages for NfsAsyncWrite
+message NfsAsyncWriteRequest {
+  int32 filedescriptor = 1; // File descriptor to write to
+  bytes data = 2; // Data to be written
+  int64 offset = 3; // Offset in the file where writing starts
+  int32 size = 4; // Size of the data being written
+}
+
+message NfsAsyncWriteResponse {
+  bool success = 1;
+  string message = 2;
+  int32 errorcode = 3; // System error number if operation failed
+  int32 bytes_written = 4; // Number of bytes successfully written
+}
+
+

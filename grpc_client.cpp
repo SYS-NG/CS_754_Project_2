@@ -158,6 +158,8 @@ class FuseGrpcClient {
             NfsReadResponse response;
 
             request.set_filedescriptor(fi->fh);
+            request.set_offset(offset);
+            request.set_size(size);
             Status status = instance_->stub_->NfsRead(&context, request, &response);
 
             int64_t len;
@@ -166,16 +168,15 @@ class FuseGrpcClient {
                 if (response.success()) {
                     len = response.size();
 
-                    if (offset < len) {
-                        if (offset + size > len) {
-                            size = len - offset;
-                        }
+                    if (len <= size) {
+                        size = len;
                         cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
                         cout << "Content: " << response.content() << endl; // Log the content read
-                        memcpy(buf, response.content().data() + offset, size);
+                        memcpy(buf, response.content().data(), size);
                         return size; // Successfully read bytes
                     } else {
-                        return 0; // Offset is beyond the file size, nothing to read
+                        cerr << "Error: Read size (" << len << ") exceeds buffer size (" << size << ")." << endl;
+                        return -EFBIG; // Return an error indicating that the file is too large
                     }
                 } else {
                     cerr << "gRPC NfsRead failed: " << response.message() << endl;
