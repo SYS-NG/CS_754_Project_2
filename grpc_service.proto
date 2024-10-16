@@ -6,9 +6,9 @@ service GrpcService {
   rpc Ping (PingRequest) returns (PingResponse) {}
   rpc NfsGetAttr (NfsGetAttrRequest) returns (NfsGetAttrResponse) {} 
   rpc NfsReadDir (NfsReadDirRequest) returns (NfsReadDirResponse) {} 
-  rpc NfsRead    (NfsReadRequest)    returns (NfsReadResponse)    {} 
+  rpc NfsRead (NfsReadRequest) returns (NfsReadResponse) {} 
   rpc NfsOpen (NfsOpenRequest) returns (NfsOpenResponse) {} 
- }
+}
 
 message PingRequest {
   string message = 1;
@@ -60,7 +60,7 @@ message NfsReadDirResponse {
 //======================================================================
 // New messages for NfsRead
 message NfsReadRequest {
-  string path = 1; // Path of the file to read
+  int64 filehandle = 1; // File handle to read
 }
 
 message NfsReadResponse {
@@ -79,4 +79,5 @@ message NfsOpenRequest {
 message NfsOpenResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
+  int64 filehandle = 3; // File handle returned upon successful open
 }

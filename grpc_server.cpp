@@ -11,12 +11,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h> // For open and pread
+#include <cstring> // For memset
 
 // Directory Manipulating
 #include <dirent.h>
-
-// File Handler
-#include <fstream>
 
 using grpc::Status;
 using grpc::ServerContext;
@@ -27,8 +26,6 @@ using grpc::ServerWriter;
 using grpc::InsecureServerCredentials;
 using namespace std;
 
-#define MB_CHUNK 1024 * 1024
-#define ONE_HUNDRED_MB_CHUNK 1024 * 1024 * 100
 class grpcServices final : public grpc_service::GrpcService::Service {
     private:
         std::string directory_path_; // Where All the files will get mounted
@@ -98,42 +95,35 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const grpc_service::NfsReadRequest* request,
             grpc_service::NfsReadResponse* response
         ) override {
-            const std::string path = request->path();
-            cout << "NfsRead called with path: " << path << endl; // Debug log
+            int file_descriptor = request->filehandle(); // Get the file descriptor from the request
+            cout << "NfsRead called with file descriptor: " << file_descriptor << endl; // Debug log
             
-            ifstream file(directory_path_ + path, ios::binary); // Open file in binary mode
-            if (!file) {
-                cerr << "File not found: " << directory_path_ + path << endl; // Debug log
+            struct stat st;
+            if (fstat(file_descriptor, &st) != 0) { // Get file info using fstat
+                cerr << "Failed to get file status for descriptor: " << file_descriptor << endl; // Debug log
                 response->set_success(false);
-                response->set_message("File not found");
+                response->set_message("File status retrieval failed");
                 return Status::OK;
             }
 
-            // Get the size of the file
-            file.seekg(0, std::ios::end); // Move to the end to get the size
-            std::streamsize size = file.tellg();
-            file.seekg(0, std::ios::beg); // Move back to the beginning
-            cout << "File size determined: " << size << " bytes" << endl; // Debug log
-
-            // Update Size for the return message
-            response->set_size(size);
+            response->set_size(st.st_size); // Set the size from fstat
 
             // Allocate a buffer to hold the file content
-            std::vector<char> buffer(size);
-            // Read the file into the buffer
-            if (file.read(buffer.data(), size)) {
-                response->set_success(true);
-                response->set_message("File Read successfully");
-                cout << "File read successfully: " << path << endl; // Debug log
-                response->set_content(std::string(buffer.data(), size)); // Use buffer.data() and size
-                cout << "File content: " << response->content() << endl; // Debug log
-            } else {
+            std::vector<char> buffer(st.st_size);
+            ssize_t bytes_read = pread(file_descriptor, buffer.data(), buffer.size(), 0); // Read from the file descriptor
+            
+            if (bytes_read < 0) {
+                cerr << "Failed to read file descriptor: " << file_descriptor << endl; // Debug log
                 response->set_success(false);
                 response->set_message("File Read Failed");
-                cerr << "Failed to read file: " << path << endl; // Debug log
-            }  
+                return Status::OK;
+            }
 
-            file.close();
+            response->set_success(true);
+            response->set_message("File Read successfully");
+            response->set_content(std::string(buffer.data(), bytes_read)); // Use buffer.data() and bytes_read
+            cout << "File content: " << response->content() << endl; // Debug log
+
             return Status::OK;
         }
 
@@ -145,9 +135,9 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const std::string path = request->path();
             cout << "NfsOpen called with path: " << path << endl; // Debug log
 
-            // Check if the file exists
-            ifstream file(directory_path_ + path);
-            if (!file) {
+            // Open the file and get the file descriptor
+            int file_descriptor = open((directory_path_ + path).c_str(), O_RDONLY);
+            if (file_descriptor < 0) {
                 cout << "File not found: " << path << endl; // Debug log
                 response->set_success(false);
                 response->set_message("File not found");
@@ -158,6 +148,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             cout << "File opened successfully: " << path << endl; // Debug log
             response->set_success(true);
             response->set_message("File opened successfully");
+            response->set_filehandle(file_descriptor); // Return the file descriptor
             return Status::OK;
         }
 };
@@ -187,7 +178,7 @@ std::string getServerIP() {
         // Skip loopback interface
         if (strcmp(ifa->ifa_name, "lo") != 0) {
             ip_address = host;
-					break;
+            break;
         }
     }
 

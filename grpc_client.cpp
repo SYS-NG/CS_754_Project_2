@@ -75,6 +75,7 @@ class FuseGrpcClient {
             Status status = instance_->stub_->NfsOpen(&context, request, &response);
 
             if (status.ok() && response.success()) {
+                fi->fh = response.filehandle();
                 return 0; // File opened successfully
             } else {
                 cerr << "gRPC NfsOpen failed: " << status.error_code() << " - " << status.error_message() << endl;
@@ -90,7 +91,7 @@ class FuseGrpcClient {
             NfsReadRequest request;
             NfsReadResponse response;
 
-            request.set_path(path);
+            request.set_filehandle(fi->fh);
             Status status = instance_->stub_->NfsRead(&context, request, &response);
 
             int64_t len;
@@ -167,8 +168,6 @@ int main(int argc, char** argv) {
 
     // Create the gRPC client
     FuseGrpcClient client(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-
-
     
     // Pass the rest of the arguments to run_fuse_main
     // Reduce the argument count by 1, and move the argument pointer to the next arg
