@@ -10,6 +10,11 @@ service GrpcService {
   rpc NfsOpen (NfsOpenRequest) returns (NfsOpenResponse) {} 
   rpc NfsRelease (NfsReleaseRequest) returns (NfsReleaseResponse) {}
   rpc NfsWrite (NfsWriteRequest) returns (NfsWriteResponse) {}
+  rpc NfsUnlink (NfsUnlinkRequest) returns (NfsUnlinkResponse) {}
+  rpc NfsRmdir (NfsRmdirRequest) returns (NfsRmdirResponse) {}
+  rpc NfsCreate (NfsCreateRequest) returns (NfsCreateResponse) {}
+  rpc NfsUtimens (NfsUtimensRequest) returns (NfsUtimensResponse) {}
+  rpc NfsMkdir (NfsMkdirRequest) returns (NfsMkdirResponse) {} 
 }
 
 message PingRequest {
@@ -45,6 +50,7 @@ message NfsGetAttrResponse {
   int64 size = 3; // Size of the file
   int32 mode = 4; // File mode (permissions)
   int32 nlink = 5; // Number of hard links
+  int32 errorcode = 6; // System error number if operation failed
 }
 
 //======================================================================
@@ -57,6 +63,7 @@ message NfsReadDirResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
   repeated string files = 3; // List of files in the directory
+  int32 errorcode = 4; // System error number if operation failed
 }
 
 //======================================================================
@@ -70,6 +77,7 @@ message NfsReadResponse {
   string message = 2; // Message for additional information
   string content = 3; // Content of the file
   int64 size = 4;
+  int32 errorcode = 5; // System error number if operation failed
 }
 
 //======================================================================
@@ -83,6 +91,7 @@ message NfsOpenResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
   int64 filedescriptor = 3; // File handle returned upon successful open
+  int32 errorcode = 4; // System error number if operation failed
 }
 
 //======================================================================
@@ -94,6 +103,7 @@ message NfsReleaseRequest {
 message NfsReleaseResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
+  int32 errorcode = 3; // System error number if operation failed
 }
 
 //======================================================================
@@ -108,4 +118,67 @@ message NfsWriteResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
   int64 bytes_written = 3; // Number of bytes written
+}
+// New messages for NfsUnlink
+message NfsUnlinkRequest {
+  string path = 1; // Path of the file to unlink
+}
+
+message NfsUnlinkResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+  int32 errorcode = 3; // System error number if operation failed
+}
+
+//======================================================================
+// New messages for NfsRmdir
+message NfsRmdirRequest {
+  string path = 1; // Path of the directory to remove
+}
+
+message NfsRmdirResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+  int32 errorcode = 3; // System error number if operation failed
+}
+
+//======================================================================
+// New messages for NfsCreate
+message NfsCreateRequest {
+  string path = 1;
+  int32 mode = 2; 
+}
+
+message NfsCreateResponse {
+  bool success = 1;
+  string message = 2;
+  int64 filehandle = 3;
+  int32 errorcode = 4; // System error number if operation failed
+}
+
+//======================================================================
+// New messages for NfsUtimens
+message NfsUtimensRequest {
+  string path = 1;
+  int64 atime = 2;
+  int64 mtime = 3;
+}
+
+message NfsUtimensResponse {
+  bool success = 1;
+  string message = 2;
+  int32 errorcode = 3; // System error number if operation failed
+}
+
+//======================================================================
+// New messages for NfsMkdir
+message NfsMkdirRequest {
+  string path = 1;
+  int32 mode = 2;
+}
+
+message NfsMkdirResponse {
+  bool success = 1;
+  string message = 2;
+  int32 errorcode = 3; // System error number if operation failed
 }

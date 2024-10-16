@@ -51,6 +51,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             struct stat st;
             if (stat((directory_path_ + path).c_str(), &st) != 0) {
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File not found");
                 return Status::OK;
             }
@@ -70,6 +71,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             DIR* dir = opendir((directory_path_ + path).c_str());
             if (dir == nullptr) {
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("Directory not found");
                 return Status::OK;
             }
@@ -102,6 +104,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (fstat(file_descriptor, &st) != 0) { // Get file info using fstat
                 cerr << "Failed to get file status for descriptor: " << file_descriptor << endl; // Debug log
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File status retrieval failed");
                 return Status::OK;
             }
@@ -141,6 +144,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (file_descriptor < 0) {
                 cout << "File not found: " << path << endl; // Debug log
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File not found");
                 return Status::OK;
             }
@@ -168,6 +172,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             } else {
                 cerr << "Failed to close file descriptor: " << file_descriptor << endl;
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File release failed");
             }
 
@@ -206,6 +211,127 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_success(true);
             response->set_message("File written successfully");
             response->set_bytes_written(bytes_written); // Return the number of bytes written
+        Status NfsUnlink(
+            ServerContext* context,
+            const grpc_service::NfsUnlinkRequest* request,
+            grpc_service::NfsUnlinkResponse* response
+        ) override {
+            const std::string path = request->path();
+            cout << "NfsUnlink called with path: " << path << endl; // Debug log
+
+            if (unlink((directory_path_ + path).c_str()) == 0) {
+                cout << "File unlinked successfully: " << path << endl;
+                response->set_success(true);
+                response->set_message("File unlinked successfully");
+            } else {
+                cerr << "Failed to unlink file: " << path << " - " << strerror(errno) << endl;
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("File unlink failed");
+            }
+            return Status::OK;
+        }
+
+        Status NfsRmdir(
+            ServerContext* context,
+            const grpc_service::NfsRmdirRequest* request,
+            grpc_service::NfsRmdirResponse* response
+        ) override {
+            const std::string path = request->path();
+            cout << "NfsRmdir called with path: " << path << endl; // Debug log
+
+            // Perform rmdir operation
+            if (rmdir((directory_path_ + path).c_str()) == 0) {
+                cout << "Directory removed successfully: " << path << endl;
+                response->set_success(true);
+                response->set_message("Directory removed successfully");
+            } else {
+                cerr << "Failed to remove directory: " << path << " - " << strerror(errno) << endl;
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("Directory removal failed");
+            }
+
+            return Status::OK;
+        }
+
+        Status NfsCreate(
+            ServerContext* context,
+            const grpc_service::NfsCreateRequest* request,
+            grpc_service::NfsCreateResponse* response
+        ) override {
+            const std::string path = request->path();
+            mode_t mode = request->mode();
+            cout << "NfsCreate called with path: " << path << " and mode: " << oct << mode << endl;
+
+            int file_descriptor = open((directory_path_ + path).c_str(), O_CREAT | O_WRONLY, mode);
+            if (file_descriptor < 0) {
+                cerr << "Failed to create file: " << path << endl;
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("File creation failed");
+                return Status::OK;
+            }
+
+            cout << "File created successfully: " << path << endl;
+            response->set_success(true);
+            response->set_message("File created successfully");
+            response->set_filehandle(file_descriptor);
+            return Status::OK;
+        }
+
+        Status NfsUtimens(
+            ServerContext* context,
+            const grpc_service::NfsUtimensRequest* request,
+            grpc_service::NfsUtimensResponse* response
+        ) override {
+            const std::string path = request->path();
+            struct timespec times[2];
+
+            // Setting the access time (atime)
+            times[0].tv_sec = request->atime();
+            times[0].tv_nsec = 0;
+
+            // Setting the modification time (mtime)
+            times[1].tv_sec = request->mtime();
+            times[1].tv_nsec = 0;
+
+            if (utimensat(AT_FDCWD, (directory_path_ + path).c_str(), times, 0) == 0) {
+                response->set_success(true);
+                response->set_message("Timestamps updated successfully");
+                cout << "Timestamps for " << path << " updated successfully." << endl;
+            } else {
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("Failed to update timestamps");
+                cerr << "Failed to update timestamps for " << path << endl;
+            }
+
+            return Status::OK;
+        }
+
+        Status NfsMkdir(
+            ServerContext* context,
+            const grpc_service::NfsMkdirRequest* request,
+            grpc_service::NfsMkdirResponse* response
+        ) override {
+            const std::string path = request->path();
+            mode_t mode = request->mode();
+
+            cout << "NfsMkdir called with path: " << path << " and mode: " << mode << endl; // Debug log
+
+            // Create the directory using mkdir system call
+            if (mkdir((directory_path_ + path).c_str(), mode) == 0) {
+                response->set_success(true);
+                response->set_message("Directory created successfully");
+                cout << "Directory created: " << path << endl;
+            } else {
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("Failed to create directory: " + std::string(strerror(errno)));
+                cerr << "Failed to create directory: " << path << " - " << strerror(errno) << endl;
+            }
+
             return Status::OK;
         }
 };
