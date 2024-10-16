@@ -51,16 +51,20 @@ class FuseGrpcClient {
             request.set_path(path);
             Status status = instance_->stub_->NfsGetAttr(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                stbuf->st_mode = response.mode();
-                stbuf->st_nlink = response.nlink();
-                stbuf->st_size = response.size();
+            if (status.ok()) {
+                if (response.success()) {
+                    stbuf->st_mode = response.mode();
+                    stbuf->st_nlink = response.nlink();
+                    stbuf->st_size = response.size();
+                    return 0; // Operation successful
+                } else {
+                    cerr << "gRPC NfsGetAttr failed: " << response.message() << endl;
+                    return -response.errorcode(); // Map the errno from server to FUSE error code
+                }
             } else {
-                cerr << "gRPC NfsGetAttr failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT;
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Input/output error for failed communication
             }
-
-            return 0;
         }
 
         static int nfs_release(const char *path, struct fuse_file_info *fi) {
@@ -74,12 +78,17 @@ class FuseGrpcClient {
             request.set_filehandle(fi->fh);
             Status status = instance_->stub_->NfsRelease(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                cout << "File released successfully: " << path << endl;
-                return 0; // File released successfully
+            if (status.ok()) {
+                if (response.success()) {
+                    cout << "File released successfully: " << path << endl;
+                    return 0; // File released successfully
+                } else {
+                    cerr << "gRPC NfsRelease failed: " << response.message() << endl;
+                    return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                }
             } else {
-                cerr << "gRPC NfsRelease failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT; // Release failed
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Input/output error for failed communication
             }
         }
 
@@ -94,12 +103,17 @@ class FuseGrpcClient {
             request.set_path(path);
             Status status = instance_->stub_->NfsOpen(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                fi->fh = response.filehandle();
-                return 0; // File opened successfully
+            if (status.ok()) {
+                if (response.success()) {
+                    fi->fh = response.filehandle();
+                    return 0; // File opened successfully
+                } else {
+                    cerr << "gRPC NfsOpen failed: " << response.message() << endl;
+                    return -response.errorcode(); // Return the errorcode from server to FUSE as a negative value
+                }
             } else {
-                cerr << "gRPC NfsOpen failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT; // File not found
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Input/output error for failed communication
             }
         }
 
@@ -116,25 +130,29 @@ class FuseGrpcClient {
 
             int64_t len;
 
-            if (status.ok() && response.success()) {
-                size = response.size();
+            if (status.ok()) {
+                if (response.success()) {
+                    len = response.size();
 
-                if (offset < len) {
-                    if (offset + size > len)
-                        size = len - offset;
-                    len = response.size(); // Get the length of the content
-                    cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
-                    cout << "Content: " << response.content() << endl; // Log the content read
-                    memcpy(buf, response.content().data() + offset, size);
+                    if (offset < len) {
+                        if (offset + size > len) {
+                            size = len - offset;
+                        }
+                        cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
+                        cout << "Content: " << response.content() << endl; // Log the content read
+                        memcpy(buf, response.content().data() + offset, size);
+                        return size; // Successfully read bytes
+                    } else {
+                        return 0; // Offset is beyond the file size, nothing to read
+                    }
                 } else {
-                    size = 0;
+                    cerr << "gRPC NfsRead failed: " << response.message() << endl;
+                    return -response.errorcode(); // Return the errorcode from server to FUSE as a negative value
                 }
             } else {
-                cerr << "gRPC NfsRead failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT;
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Input/output error for failed communication
             }
-
-            return size;
         }
 
         static int nfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) {
@@ -148,18 +166,22 @@ class FuseGrpcClient {
             request.set_path(path);
             Status status = FuseGrpcClient::instance_->stub_->NfsReadDir(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                // Add files from the response
-                for (const auto& file : response.files()) {
-                    cout <<  file.c_str() << endl;
-                    filler(buf, file.c_str(), NULL, 0, FUSE_FILL_DIR_PLUS);
+            if (status.ok()) {
+                if (response.success()) {
+                    // Add files from the response
+                    for (const auto& file : response.files()) {
+                        cout << file.c_str() << endl;
+                        filler(buf, file.c_str(), NULL, 0, FUSE_FILL_DIR_PLUS);
+                    }
+                    return 0; // Operation successful
+                } else {
+                    cerr << "gRPC NfsReadDir failed: " << response.message() << endl;
+                    return -response.errorcode(); // Return the errorcode from server to FUSE as a negative value
                 }
             } else {
-                cerr << "gRPC NfsReadDir failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT;
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Input/output error for failed communication
             }
-
-            return 0;
         }
 
         static int nfs_unlink(const char *path) {
@@ -173,12 +195,17 @@ class FuseGrpcClient {
             request.set_path(path);
             Status status = instance_->stub_->NfsUnlink(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                cout << "File unlinked successfully: " << path << endl;
-                return 0; // File unlinked successfully
+            if (status.ok()) {
+                if (response.success()) {
+                    cout << "File unlinked successfully: " << path << endl;
+                    return 0; // File unlinked successfully
+                } else {
+                    cerr << "gRPC NfsUnlink failed: " << response.message() << endl;
+                    return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                }
             } else {
-                cerr << "gRPC NfsUnlink failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT; // Unlink failed
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Input/output error for failed communication
             }
         }
 
@@ -193,12 +220,17 @@ class FuseGrpcClient {
             request.set_path(path);
             Status status = instance_->stub_->NfsRmdir(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                cout << "Directory removed successfully: " << path << endl;
-                return 0; // Directory removed successfully
+            if (status.ok()) {
+                if (response.success()) {
+                    cout << "Directory removed successfully: " << path << endl;
+                    return 0; // Directory removed successfully
+                } else {
+                    cerr << "gRPC NfsRmdir failed: " << response.message() << endl;
+                    return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                }
             } else {
-                cerr << "gRPC NfsRmdir failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT; // Remove failed
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Input/output error for failed communication
             }
         }
 
@@ -217,13 +249,18 @@ class FuseGrpcClient {
             request.set_mode(mode);
             Status status = instance_->stub_->NfsCreate(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                cout << "File created successfully: " << path << endl;
-                fi->fh = response.filehandle();
-                return 0;
+            if (status.ok()) {
+                if (response.success()) {
+                    cout << "File created successfully: " << path << endl;
+                    fi->fh = response.filehandle();
+                    return 0;
+                } else {
+                    cerr << "gRPC NfsCreate failed: " << response.message() << endl;
+                    return -response.errorcode();
+                }
             } else {
-                cerr << "gRPC NfsCreate failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT;
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO;
             }
         }
 
@@ -242,12 +279,17 @@ class FuseGrpcClient {
 
             Status status = instance_->stub_->NfsUtimens(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                cout << "Timestamps updated successfully for path: " << path << endl;
-                return 0; // Success
+            if (status.ok()) {
+                if (response.success()) {
+                    cout << "Timestamps updated successfully for path: " << path << endl;
+                    return 0; // Success
+                } else {
+                    cerr << "gRPC NfsUtimens failed: " << response.errorcode() << " - " << response.message() << endl;
+                    return -response.errorcode(); // Return the error code from server
+                }
             } else {
-                cerr << "gRPC NfsUtimens failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT; // Error occurred
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Communication failure, return I/O error
             }
         }
 
@@ -266,12 +308,17 @@ class FuseGrpcClient {
             request.set_mode(mode);
             Status status = instance_->stub_->NfsMkdir(&context, request, &response);
 
-            if (status.ok() && response.success()) {
-                cout << "Directory created successfully: " << path << endl;
-                return 0; // Directory created successfully
+            if (status.ok()) {
+                if (response.success()) {
+                    cout << "Directory created successfully: " << path << endl;
+                    return 0; // Success
+                } else {
+                    cerr << "gRPC NfsMkdir failed with error code: " << response.errorcode() << " - " << response.message() << endl;
+                    return -response.errorcode(); // Return the error code from the server
+                }
             } else {
-                cerr << "gRPC NfsMkdir failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EACCES; // Failed to create directory
+                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -EIO; // Communication failure, return I/O error
             }
         }
 

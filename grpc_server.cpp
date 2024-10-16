@@ -51,6 +51,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             struct stat st;
             if (stat((directory_path_ + path).c_str(), &st) != 0) {
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File not found");
                 return Status::OK;
             }
@@ -70,6 +71,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             DIR* dir = opendir((directory_path_ + path).c_str());
             if (dir == nullptr) {
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("Directory not found");
                 return Status::OK;
             }
@@ -102,6 +104,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (fstat(file_descriptor, &st) != 0) { // Get file info using fstat
                 cerr << "Failed to get file status for descriptor: " << file_descriptor << endl; // Debug log
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File status retrieval failed");
                 return Status::OK;
             }
@@ -140,6 +143,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (file_descriptor < 0) {
                 cout << "File not found: " << path << endl; // Debug log
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File not found");
                 return Status::OK;
             }
@@ -167,6 +171,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             } else {
                 cerr << "Failed to close file descriptor: " << file_descriptor << endl;
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File release failed");
             }
 
@@ -188,6 +193,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             } else {
                 cerr << "Failed to unlink file: " << path << " - " << strerror(errno) << endl;
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File unlink failed");
             }
             return Status::OK;
@@ -209,6 +215,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             } else {
                 cerr << "Failed to remove directory: " << path << " - " << strerror(errno) << endl;
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("Directory removal failed");
             }
 
@@ -228,6 +235,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (file_descriptor < 0) {
                 cerr << "Failed to create file: " << path << endl;
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File creation failed");
                 return Status::OK;
             }
@@ -261,6 +269,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 cout << "Timestamps for " << path << " updated successfully." << endl;
             } else {
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("Failed to update timestamps");
                 cerr << "Failed to update timestamps for " << path << endl;
             }
@@ -285,6 +294,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 cout << "Directory created: " << path << endl;
             } else {
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("Failed to create directory: " + std::string(strerror(errno)));
                 cerr << "Failed to create directory: " << path << " - " << strerror(errno) << endl;
             }
