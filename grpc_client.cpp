@@ -363,13 +363,10 @@ class FuseGrpcClient {
         {
             static struct fuse_operations nfs_oper = {
                 .getattr = nfs_getattr,
-<<<<<<< HEAD
-                .truncate = nfs_truncate,
-=======
                 .mkdir   = nfs_mkdir,
                 .unlink  = nfs_unlink,
                 .rmdir   = nfs_rmdir,
->>>>>>> b995a89799b86579339e377d43fa12bb075d6400
+                .truncate = nfs_truncate,
                 .open    = nfs_open,
                 .read    = nfs_read,
                 .write   = nfs_write,

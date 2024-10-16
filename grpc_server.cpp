@@ -211,6 +211,9 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_success(true);
             response->set_message("File written successfully");
             response->set_bytes_written(bytes_written); // Return the number of bytes written
+            return Status::OK;
+        }
+
         Status NfsUnlink(
             ServerContext* context,
             const grpc_service::NfsUnlinkRequest* request,
