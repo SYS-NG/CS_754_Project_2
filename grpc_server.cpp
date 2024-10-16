@@ -151,6 +151,27 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_filehandle(file_descriptor); // Return the file descriptor
             return Status::OK;
         }
+
+        Status NfsRelease(
+            ServerContext* context,
+            const grpc_service::NfsReleaseRequest* request,
+            grpc_service::NfsReleaseResponse* response
+        ) override {
+            int file_descriptor = request->filehandle(); // Get the file descriptor from the request
+            cout << "NfsRelease called with file descriptor: " << file_descriptor << endl; // Debug log
+
+            if (close(file_descriptor) == 0) {
+                cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
+                response->set_success(true);
+                response->set_message("File released successfully");
+            } else {
+                cerr << "Failed to close file descriptor: " << file_descriptor << endl;
+                response->set_success(false);
+                response->set_message("File release failed");
+            }
+
+            return Status::OK;
+        }
 };
 
 std::string getServerIP() {

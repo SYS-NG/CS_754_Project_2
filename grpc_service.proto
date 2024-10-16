@@ -8,6 +8,7 @@ service GrpcService {
   rpc NfsReadDir (NfsReadDirRequest) returns (NfsReadDirResponse) {} 
   rpc NfsRead (NfsReadRequest) returns (NfsReadResponse) {} 
   rpc NfsOpen (NfsOpenRequest) returns (NfsOpenResponse) {} 
+  rpc NfsRelease (NfsReleaseRequest) returns (NfsReleaseResponse) {}
 }
 
 message PingRequest {
@@ -80,4 +81,15 @@ message NfsOpenResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
   int64 filehandle = 3; // File handle returned upon successful open
+}
+
+//======================================================================
+// New messages for NfsRelease
+message NfsReleaseRequest {
+  int64 filehandle = 1; // File handle to release
+}
+
+message NfsReleaseResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
 }

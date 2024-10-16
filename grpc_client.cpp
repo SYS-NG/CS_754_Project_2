@@ -63,6 +63,26 @@ class FuseGrpcClient {
             return 0;
         }
 
+        static int nfs_release(const char *path, struct fuse_file_info *fi) {
+            cout << "Releasing file: " << path << " with file handle: " << fi->fh << endl;
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsReleaseRequest request;
+            NfsReleaseResponse response;
+
+            request.set_filehandle(fi->fh);
+            Status status = instance_->stub_->NfsRelease(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                cout << "File released successfully: " << path << endl;
+                return 0; // File released successfully
+            } else {
+                cerr << "gRPC NfsRelease failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -ENOENT; // Release failed
+            }
+        }
+
         static int nfs_open(const char *path, struct fuse_file_info *fi) {
             cout << "Opening file: " << path << endl;
 
@@ -148,6 +168,7 @@ class FuseGrpcClient {
                 .getattr = nfs_getattr,
                 .open    = nfs_open,
                 .read    = nfs_read,
+                .release = nfs_release,
                 .readdir = nfs_readdir,
             };
 
