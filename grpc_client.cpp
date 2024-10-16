@@ -89,15 +89,24 @@ class FuseGrpcClient {
 
         static int nfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) {
             cout << "Reading directory: " << path << endl;
-            if (strcmp(path, "/") != 0) {
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsReadDirRequest request;
+            NfsReadDirResponse response;
+
+            request.set_path(path);
+            Status status = FuseGrpcClient::instance_->stub_->NfsReadDir(&context, request, &response);
+
+            if (status.ok() && response.success()) {
+                // Add files from the response
+                for (const auto& file : response.files()) {
+                    filler(buf, file.c_str(), NULL, 0, FUSE_FILL_DIR_PLUS);
+                }
+            } else {
+                cerr << "gRPC NfsReadDir failed: " << status.error_code() << " - " << status.error_message() << endl;
                 return -ENOENT;
             }
-
-            // Add default directory entries '.' and '..'
-            filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
-            filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-            // Add file 'testfile'
-            filler(buf, "testfile", NULL, 0, FUSE_FILL_DIR_PLUS);
 
             return 0;
         }

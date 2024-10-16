@@ -6,8 +6,8 @@ service GrpcService {
   rpc Ping (PingRequest) returns (PingResponse) {}
   rpc ServerStreamData (DataRequest) returns (stream DataChunk) {}
   rpc ClientStreamData (stream DataChunk) returns (TransferStatus) {}
-  rpc SendAndWaitAck (DataChunk) returns (PingResponse) {}
   rpc NfsGetAttr (NfsGetAttrRequest) returns (NfsGetAttrResponse) {} // Added NfsGetAttr RPC
+  rpc NfsReadDir (NfsReadDirRequest) returns (NfsReadDirResponse) {} // Added NfsReadDir RPC
 }
 
 message PingRequest {
@@ -31,6 +31,7 @@ message DataRequest {
   int64 size = 1;
 }
 
+//======================================================================
 // New messages for NfsGetAttr
 message NfsGetAttrRequest {
   string path = 1; // Path for which attributes are requested
@@ -42,4 +43,16 @@ message NfsGetAttrResponse {
   int64 size = 3; // Size of the file
   int32 mode = 4; // File mode (permissions)
   int32 nlink = 5; // Number of hard links
+}
+
+//======================================================================
+// New messages for NfsReadDir
+message NfsReadDirRequest {
+  string path = 1; // Path of the directory to read
+}
+
+message NfsReadDirResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+  repeated string files = 3; // List of files in the directory
 }

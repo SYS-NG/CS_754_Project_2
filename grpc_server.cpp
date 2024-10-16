@@ -12,6 +12,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+// Directory Manipulating
+#include <dirent.h>
+
 using grpc::Status;
 using grpc::ServerContext;
 using grpc::ServerBuilder;
@@ -38,21 +41,6 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_message("Ack");
             return Status::OK;
         }
-        
-        Status SendAndWaitAck(
-            ServerContext*                 context,
-            const grpc_service::DataChunk* data,
-            grpc_service::PingResponse*    response
-        ) override {
-            try {
-                int64_t received_size = data->data().size();
-                response->set_message("Ack");
-                return Status::OK;
-            } catch (const std::exception& e) {
-                cerr << "Exception in SendAndWaitAck: " << e.what() << endl;
-                return Status::CANCELLED;
-            }
-        }
 
         Status NfsGetAttr(
             ServerContext* context,
@@ -70,6 +58,34 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_size(st.st_size);
             response->set_mode(st.st_mode);
             response->set_nlink(st.st_nlink);
+            return Status::OK;
+        }
+
+        Status NfsReadDir(
+            ServerContext* context,
+            const grpc_service::NfsReadDirRequest* request,
+            grpc_service::NfsReadDirResponse* response
+        ) override {
+            const std::string path = request->path();
+            DIR* dir = opendir((directory_path_ + path).c_str());
+            if (dir == nullptr) {
+                response->set_success(false);
+                response->set_message("Directory not found");
+                return Status::OK;
+            }
+
+            response->set_success(true);
+            response->set_message("Directory read successfully");
+
+            struct dirent* entry;
+            while ((entry = readdir(dir)) != nullptr) {
+                // DT_REG = regular file
+                // DT_DIR = directory
+                if (entry->d_type == DT_REG || entry->d_type == DT_DIR) {
+                    response->add_files(entry->d_name);
+                }
+            }
+            closedir(dir);
             return Status::OK;
         }
 
