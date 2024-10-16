@@ -95,7 +95,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const grpc_service::NfsReadRequest* request,
             grpc_service::NfsReadResponse* response
         ) override {
-            int file_descriptor = request->filehandle(); // Get the file descriptor from the request
+            int file_descriptor = request->filedescriptor(); // Get the file descriptor from the request
             cout << "NfsRead called with file descriptor: " << file_descriptor << endl; // Debug log
             
             struct stat st;
@@ -132,11 +132,12 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const grpc_service::NfsOpenRequest* request,
             grpc_service::NfsOpenResponse* response
         ) override {
-            const std::string path = request->path();
+            const std::string path  = request->path();
+            const int64_t     flags = request->flags(); 
             cout << "NfsOpen called with path: " << path << endl; // Debug log
 
             // Open the file and get the file descriptor
-            int file_descriptor = open((directory_path_ + path).c_str(), O_RDONLY);
+            int file_descriptor = open((directory_path_ + path).c_str(), flags);
             if (file_descriptor < 0) {
                 cout << "File not found: " << path << endl; // Debug log
                 response->set_success(false);
@@ -148,7 +149,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             cout << "File opened successfully: " << path << endl; // Debug log
             response->set_success(true);
             response->set_message("File opened successfully");
-            response->set_filehandle(file_descriptor); // Return the file descriptor
+            response->set_filedescriptor(file_descriptor); // Return the file descriptor
             return Status::OK;
         }
 
@@ -157,7 +158,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const grpc_service::NfsReleaseRequest* request,
             grpc_service::NfsReleaseResponse* response
         ) override {
-            int file_descriptor = request->filehandle(); // Get the file descriptor from the request
+            int file_descriptor = request->filedescriptor(); // Get the file descriptor from the request
             cout << "NfsRelease called with file descriptor: " << file_descriptor << endl; // Debug log
 
             if (close(file_descriptor) == 0) {
@@ -170,6 +171,41 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 response->set_message("File release failed");
             }
 
+            return Status::OK;
+        }
+
+        Status NfsWrite(
+            ServerContext* context,
+            const grpc_service::NfsWriteRequest* request,
+            grpc_service::NfsWriteResponse* response
+        ) override {
+            int file_descriptor = request->filedescriptor();
+            const std::string content = request->content();
+            int64_t size = request->size();
+            off_t offset = request->offset(); 
+
+            cout << "NfsWrite invoked with file descriptor: " << file_descriptor << ", content size: " << size << ", and offset: " << offset << endl; // Debug log
+            cout << "Writing content: " << content << " to file descriptor: " << file_descriptor << " at offset: " << offset << endl; // Log the content being written
+            if (lseek(file_descriptor, offset, SEEK_SET) == (off_t)-1) {
+                cerr << "Failed to seek to offset: " << offset << " in file descriptor: " << file_descriptor << endl;
+                response->set_success(false);
+                response->set_message("File seek failed");
+                return Status::OK;
+            }
+
+            // Write the content to the file
+            ssize_t bytes_written = write(file_descriptor, content.c_str(), size);
+            if (bytes_written < 0) {
+                cerr << "Failed to write to file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl; // Debug log with error message
+                response->set_success(false);
+                response->set_message("File write failed");
+                return Status::OK;
+            }
+
+            cout << "Successfully wrote " << bytes_written << " bytes to file descriptor: " << file_descriptor << endl; // Debug log
+            response->set_success(true);
+            response->set_message("File written successfully");
+            response->set_bytes_written(bytes_written); // Return the number of bytes written
             return Status::OK;
         }
 };

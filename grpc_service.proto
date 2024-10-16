@@ -9,6 +9,7 @@ service GrpcService {
   rpc NfsRead (NfsReadRequest) returns (NfsReadResponse) {} 
   rpc NfsOpen (NfsOpenRequest) returns (NfsOpenResponse) {} 
   rpc NfsRelease (NfsReleaseRequest) returns (NfsReleaseResponse) {}
+  rpc NfsWrite (NfsWriteRequest) returns (NfsWriteResponse) {}
 }
 
 message PingRequest {
@@ -61,7 +62,7 @@ message NfsReadDirResponse {
 //======================================================================
 // New messages for NfsRead
 message NfsReadRequest {
-  int64 filehandle = 1; // File handle to read
+  int64 filedescriptor = 1; // File handle to read
 }
 
 message NfsReadResponse {
@@ -75,21 +76,36 @@ message NfsReadResponse {
 // New messages for NfsOpen
 message NfsOpenRequest {
   string path = 1; // Path of the file to open
+  int64  flags = 2;
 }
 
 message NfsOpenResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
-  int64 filehandle = 3; // File handle returned upon successful open
+  int64 filedescriptor = 3; // File handle returned upon successful open
 }
 
 //======================================================================
 // New messages for NfsRelease
 message NfsReleaseRequest {
-  int64 filehandle = 1; // File handle to release
+  int64 filedescriptor = 1; // File handle to release
 }
 
 message NfsReleaseResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
+}
+
+//======================================================================
+message NfsWriteRequest {
+  int64 filedescriptor = 1; // File handle to write to
+  string content = 2; // Content to write to the file
+  int64 size = 3; // Size of the content being written
+  int64 offset = 4; // Offset for the file to write to
+}
+
+message NfsWriteResponse {
+  bool success = 1; // Indicates if the operation was successful
+  string message = 2; // Message for additional information
+  int64 bytes_written = 3; // Number of bytes written
 }

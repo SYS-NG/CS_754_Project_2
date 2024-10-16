@@ -71,7 +71,7 @@ class FuseGrpcClient {
             NfsReleaseRequest request;
             NfsReleaseResponse response;
 
-            request.set_filehandle(fi->fh);
+            request.set_filedescriptor(fi->fh);
             Status status = instance_->stub_->NfsRelease(&context, request, &response);
 
             if (status.ok() && response.success()) {
@@ -92,15 +92,47 @@ class FuseGrpcClient {
             NfsOpenResponse response;
 
             request.set_path(path);
+            request.set_flags(fi->flags);
             Status status = instance_->stub_->NfsOpen(&context, request, &response);
 
             if (status.ok() && response.success()) {
-                fi->fh = response.filehandle();
+                fi->fh = response.filedescriptor();
                 return 0; // File opened successfully
             } else {
                 cerr << "gRPC NfsOpen failed: " << status.error_code() << " - " << status.error_message() << endl;
                 return -ENOENT; // File not found
             }
+        }
+
+        
+
+        // Write should return exactly the number of bytes requested except on error
+        static int nfs_write (const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+            cout << "Write to file: " << path << endl;
+            cout << "Buffer content to write: " << string(buf, size) << endl; // Log the buffer content
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsWriteRequest request;
+            NfsWriteResponse response;
+
+            request.set_filedescriptor(fi->fh);
+            request.set_content(buf);
+            request.set_size(size);
+            request.set_offset(offset);
+
+            Status status = instance_->stub_->NfsWrite(&context, request, &response);
+
+            int64_t len;
+
+            if (status.ok() && response.success()) {
+                len = response.bytes_written();
+            } else {
+                cerr << "gRPC NfsWrite failed: " << status.error_code() << " - " << status.error_message() << endl;
+                return -ENOENT;
+            }
+
+            return len;
         }
 
         static int nfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
@@ -111,18 +143,19 @@ class FuseGrpcClient {
             NfsReadRequest request;
             NfsReadResponse response;
 
-            request.set_filehandle(fi->fh);
+            request.set_filedescriptor(fi->fh);
             Status status = instance_->stub_->NfsRead(&context, request, &response);
 
             int64_t len;
 
             if (status.ok() && response.success()) {
-                size = response.size();
-
+                len = response.size();
+                
+                //NOTE: This offset handling can be on the server to reduce sending the whole file
                 if (offset < len) {
                     if (offset + size > len)
                         size = len - offset;
-                    len = response.size(); // Get the length of the content
+                    
                     cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
                     cout << "Content: " << response.content() << endl; // Log the content read
                     memcpy(buf, response.content().data() + offset, size);
@@ -162,12 +195,19 @@ class FuseGrpcClient {
             return 0;
         }
 
+        static int nfs_truncate(const char *path, off_t size, struct fuse_file_info *fi) {
+            cout << "Truncate called on file: " << path << " with size: " << size << endl;
+            return 0; // Indicate success
+        }
+
         void run_fuse_main(int argc, char** argv)
         {
             static struct fuse_operations nfs_oper = {
                 .getattr = nfs_getattr,
+                .truncate = nfs_truncate,
                 .open    = nfs_open,
                 .read    = nfs_read,
+                .write   = nfs_write,
                 .release = nfs_release,
                 .readdir = nfs_readdir,
             };
