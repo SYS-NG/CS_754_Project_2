@@ -14,6 +14,8 @@ using grpc::Status;
 using namespace grpc_service;
 using namespace std;
 
+#define RUN_SYNC false
+
 class FuseGrpcClient {
     private:
         unique_ptr<GrpcService::Stub> stub_;
@@ -76,7 +78,13 @@ class FuseGrpcClient {
             NfsReleaseResponse response;
 
             request.set_filedescriptor(fi->fh);
-            Status status = instance_->stub_->NfsRelease(&context, request, &response);
+
+            Status status;
+            if (RUN_SYNC) {
+                status = instance_->stub_->NfsRelease(&context, request, &response);
+            } else {
+                status = instance_->stub_->NfsReleaseAsync(&context, request, &response);
+            }
 
             if (status.ok()) {
                 if (response.success()) {
@@ -135,7 +143,12 @@ class FuseGrpcClient {
             request.set_size(size);
             request.set_offset(offset);
 
-            Status status = instance_->stub_->NfsWrite(&context, request, &response);
+            Status status;
+            if (RUN_SYNC) {
+                status = instance_->stub_->NfsWrite(&context, request, &response);
+            } else {
+                status = instance_->stub_->NfsWriteAsync(&context, request, &response);
+            }
 
             int64_t len;
 

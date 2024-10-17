@@ -26,10 +26,16 @@ using grpc::ServerWriter;
 using grpc::InsecureServerCredentials;
 using namespace std;
 
+struct WriteCommand {
+    off_t offset;
+    size_t size;
+    std::string content;
+};
+
 class grpcServices final : public grpc_service::GrpcService::Service {
     private:
         std::string directory_path_; // Where All the files will get mounted
-        std::unordered_map<int, std::string> file_descriptor_map_; // Maps file descriptors to their content buffers
+        std::unordered_map<int, vector<WriteCommand>> file_descriptor_map_; // Maps file descriptors to their write commands
 
     public: 
         grpcServices(const std::string& directory_path) : directory_path_(directory_path) {}
@@ -172,6 +178,140 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             return Status::OK;
         }
 
+        WriteCommand mergeContent(const WriteCommand& a, const WriteCommand& b) {
+            // Log the input arguments
+            cout << "Merging WriteCommands: a.offset = " << a.offset << ", a.size = " << a.size << ", a.content = " << a.content << endl;
+            cout << "b.offset = " << b.offset << ", b.size = " << b.size << ", b.content = " << b.content << endl;
+
+            // Check if the commands overlap or are continuous
+            if (b.offset > a.offset + a.size) {
+                throw std::invalid_argument("WriteCommands do not overlap or are not continuous");
+            }
+
+            // Create a new WriteCommand for the merged content
+            WriteCommand merged_command;
+            merged_command.offset = a.offset; // Start at the beginning of the first command
+            merged_command.size = std::max(a.offset + a.size, b.offset + b.size) - a.offset; // Calculate the new size
+
+            // Create the merged content
+            merged_command.content = a.content;
+            // Overwrite the overlapping region with the content of the second command
+            size_t overlap_start = b.offset - a.offset; // Calculate the start of the overlap in the first command
+            merged_command.content.replace(overlap_start, b.size, b.content); // Replace the overlapping part
+
+            cout << "Final merged command: offset = " << merged_command.offset 
+                 << ", size = " << merged_command.size 
+                 << ", content = " << merged_command.content << endl;
+
+            return merged_command;
+        }
+
+        Status NfsReleaseAsync(
+            ServerContext* context,
+            const grpc_service::NfsReleaseRequest* request,
+            grpc_service::NfsReleaseResponse* response
+        ) override {
+            int file_descriptor = request->filedescriptor();
+            cout << "NfsReleaseAsync called with file descriptor: " << file_descriptor << endl;
+
+
+            // Need to push to disk
+            // First sort the WriteCommands under the file descriptor by offset
+            // Then start merging the Write Commands when possible
+            // if nextOffset < currentOffset + currentSize
+            // then it can be merged
+            // currentSize = nextOffset + nextSize - currentOffset
+            // content that overlaps should be overwritten by the new content
+            // 
+            // else: this overlap is done, and is one writeCommand, add to a final write command vector
+            // on to the next commands
+            //
+            // At the end using the final write command vector, write to the file descriptor
+            cout << "Retrieving write commands for file descriptor: " << file_descriptor << endl;
+            std::vector<WriteCommand> write_commands = file_descriptor_map_[file_descriptor];
+            cout << "Number of write commands retrieved: " << write_commands.size() << endl;
+
+            cout << "Sorting write commands by offset." << endl;
+            std::sort(write_commands.begin(), write_commands.end(), [](const WriteCommand& a, const WriteCommand& b) {
+                return a.offset < b.offset; // Sort by offset
+            });
+
+            std::vector<WriteCommand> final_write_commands;
+            WriteCommand current_command = {0, 0, ""}; // Initialize with default values
+
+            for (const auto& command : write_commands) {
+                cout << "Processing command: offset = " << command.offset 
+                     << ", size = " << command.size 
+                     << ", content = " << command.content << endl;
+
+                if (current_command.size == 0) {
+                    cout << "Initializing current_command with the first command." << endl;
+                    current_command = command;
+                } else {
+                    cout << "Comparing current_command: offset = " << current_command.offset 
+                         << ", size = " << current_command.size 
+                         << " with command: offset = " << command.offset 
+                         << ", size = " << command.size << endl;
+
+                    if (command.offset <= current_command.offset + current_command.size) {
+                        cout << "Commands overlap. Merging commands." << endl;
+                        current_command = mergeContent(current_command, command);
+                    } else {
+                        cout << "No overlap detected. Finalizing current command." << endl;
+                        final_write_commands.push_back(current_command);
+                        current_command = command; // Start a new command
+                    }
+                }
+            }
+
+            // Add the last command if it exists
+            if (current_command.size > 0) {
+                cout << "Adding the last command to final write commands." << endl;
+                final_write_commands.push_back(current_command);
+            }
+
+            // Write the final commands to the file descriptor
+            for (const auto& cmd : final_write_commands) {
+                cout << "Writing to file descriptor " << file_descriptor 
+                     << " at offset " << cmd.offset 
+                     << " with size " << cmd.size 
+                     << " and content: " << cmd.content << endl;
+
+                if (lseek(file_descriptor, cmd.offset, SEEK_SET) == (off_t)-1) {
+                    cerr << "Failed to seek to offset: " << cmd.offset << " for file descriptor: " << file_descriptor << endl;
+                    response->set_success(false);
+                    response->set_message("File seek failed");
+                    return Status::OK;
+                }
+
+                ssize_t bytes_written = write(file_descriptor, cmd.content.data(), cmd.size);
+                if (bytes_written < 0) {
+                    cerr << "Failed to write to file descriptor: " << file_descriptor 
+                         << ", error: " << strerror(errno) << endl;
+                    response->set_success(false);
+                    response->set_message("File write failed");
+                    return Status::OK;
+                }
+                cout << "Successfully wrote " << bytes_written << " bytes." << endl;
+            }
+
+            cout << "Clearing the file descriptor map." << endl;
+            file_descriptor_map_.clear(); // Clear the file descriptor map
+
+            if (close(file_descriptor) == 0) {
+                cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
+                response->set_success(true);
+                response->set_message("File released successfully");
+            } else {
+                cerr << "Failed to close file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl;
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("File release failed");
+            }
+
+            return Status::OK;
+        }
+
         Status NfsRelease(
             ServerContext* context,
             const grpc_service::NfsReleaseRequest* request,
@@ -229,17 +369,17 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             return Status::OK;
         }
 
-        Status NfsAsyncWrite(
+        Status NfsWriteAsync(
             ServerContext* context,
-            const grpc_service::NfsAsyncWriteRequest* request,
-            grpc_service::NfsAsyncWriteResponse* response
+            const grpc_service::NfsWriteRequest* request,
+            grpc_service::NfsWriteResponse* response
         ) override {
             int file_descriptor = request->filedescriptor();
-            const std::string data = request->data();
+            const std::string data = request->content();
             int64_t offset = request->offset();
             int32_t size = request->size();
 
-            cout << "NfsAsyncWrite invoked with file descriptor: " << file_descriptor 
+            cout << "NfsWriteAsync invoked with file descriptor: " << file_descriptor 
                  << ", data size: " << size << ", and offset: " << offset << endl; // Debug log
 
             // Check if the file descriptor is valid
@@ -250,7 +390,13 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 return Status::OK;
             }
         
-            //TODO: Buffer Logic
+            WriteCommand command;
+            command.offset = offset;
+            command.size = size;
+            command.content = data;
+
+            // Store the write command in the file descriptor map
+            file_descriptor_map_[file_descriptor].push_back(command);
 
             response->set_success(true);
             response->set_message("Data buffered successfully");
