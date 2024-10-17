@@ -121,6 +121,7 @@ message NfsWriteResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
   int64 bytes_written = 3; // Number of bytes written
+  int32 errorcode = 4; // System error number if operation failed
 }
 // New messages for NfsUnlink
 message NfsUnlinkRequest {

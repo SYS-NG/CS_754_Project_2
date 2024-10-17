@@ -43,228 +43,418 @@ class FuseGrpcClient {
             cout << "Getting attributes for path: " << path << endl;
             memset(stbuf, 0, sizeof(struct stat));
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsGetAttrRequest request;
-            NfsGetAttrResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_path(path);
-            Status status = instance_->stub_->NfsGetAttr(&context, request, &response);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsGetAttrRequest request;
+                NfsGetAttrResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    stbuf->st_mode = response.mode();
-                    stbuf->st_nlink = response.nlink();
-                    stbuf->st_size = response.size();
-                    return 0; // Operation successful
+                // Set timeout for the request
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare the request
+                request.set_path(path);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsGetAttr(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        stbuf->st_mode = response.mode();
+                        stbuf->st_nlink = response.nlink();
+                        stbuf->st_size = response.size();
+                        return 0; // Operation successful
+                    } else {
+                        cerr << "gRPC NfsGetAttr failed: " << response.message() << endl;
+                        return -response.errorcode(); // Map the errno from server to FUSE error code
+                    }
                 } else {
-                    cerr << "gRPC NfsGetAttr failed: " << response.message() << endl;
-                    return -response.errorcode(); // Map the errno from server to FUSE error code
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    
+                    // Rerty on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO;
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Input/output error for failed communication
             }
+
+            cerr << "Failed to get attributes after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
+
 
         static int nfs_release(const char *path, struct fuse_file_info *fi) {
             cout << "Releasing file: " << path << " with file handle: " << fi->fh << endl;
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsReleaseRequest request;
-            NfsReleaseResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_filedescriptor(fi->fh);
-            Status status = instance_->stub_->NfsRelease(&context, request, &response);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsReleaseRequest request;
+                NfsReleaseResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    cout << "File released successfully: " << path << endl;
-                    return 0; // File released successfully
+                // Set timeout for the request
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare the request
+                request.set_filedescriptor(fi->fh);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsRelease(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        cout << "File released successfully: " << path << endl;
+                        return 0; // Operation successful
+                    } else {
+                        cerr << "gRPC NfsRelease failed: " << response.message() << endl;
+                        return -response.errorcode(); // Map the errno from server to FUSE error code
+                    }
                 } else {
-                    cerr << "gRPC NfsRelease failed: " << response.message() << endl;
-                    return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO;
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Input/output error for failed communication
             }
+
+            cerr << "Failed to release file after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
 
         static int nfs_open(const char *path, struct fuse_file_info *fi) {
             cout << "Opening file: " << path << endl;
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsOpenRequest request;
-            NfsOpenResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_path(path);
-            request.set_flags(fi->flags);
-            Status status = instance_->stub_->NfsOpen(&context, request, &response);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsOpenRequest request;
+                NfsOpenResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    fi->fh = response.filedescriptor();
-                    return 0; // File opened successfully
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare the request
+                request.set_path(path);
+                request.set_flags(fi->flags);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsOpen(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        fi->fh = response.filedescriptor();
+                        return 0; // File opened successfully
+                    } else {
+                        cerr << "gRPC NfsOpen failed: " << response.message() << endl;
+                        return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                    }
                 } else {
-                    cerr << "gRPC NfsOpen failed: " << response.message() << endl;
-                    return -response.errorcode(); // Return the errorcode from server to FUSE as a negative value
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO;
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Input/output error for failed communication
             }
+
+            cerr << "Failed to open file after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
-
-        
-
+    
         // Write should return exactly the number of bytes requested except on error
-        static int nfs_write (const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+        static int nfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
             cout << "Write to file: " << path << endl;
             cout << "Buffer content to write: " << string(buf, size) << endl; // Log the buffer content
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsWriteRequest request;
-            NfsWriteResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_filedescriptor(fi->fh);
-            request.set_content(buf);
-            request.set_size(size);
-            request.set_offset(offset);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsWriteRequest request;
+                NfsWriteResponse response;
 
-            Status status = instance_->stub_->NfsWrite(&context, request, &response);
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
 
-            int64_t len;
+                // Prepare the request
+                request.set_filedescriptor(fi->fh);
+                request.set_content(buf);
+                request.set_size(size);
+                request.set_offset(offset);
 
-            if (status.ok() && response.success()) {
-                len = response.bytes_written();
-            } else {
-                cerr << "gRPC NfsWrite failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -ENOENT;
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsWrite(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        int64_t len = response.bytes_written();
+                        return len; // Operation successful, return bytes written
+                    } else {
+                        cerr << "gRPC NfsWrite failed: " << response.message() << endl;
+                        return -response.errorcode(); // Map the errno from server to FUSE error code
+                    }
+                } else {
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO;
+                    }
+                }
             }
 
-            return len;
+            cerr << "Failed to write to file after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
 
         static int nfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
             cout << "Reading file: " << path << endl;
-            
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsReadRequest request;
-            NfsReadResponse response;
 
-            request.set_filedescriptor(fi->fh);
-            request.set_offset(offset);
-            request.set_size(size);
-            Status status = instance_->stub_->NfsRead(&context, request, &response);
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            int64_t len;
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsReadRequest request;
+                NfsReadResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    len = response.size();
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
 
-                    if (len <= size) {
-                        size = len;
-                        cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
-                        cout << "Content: " << response.content() << endl; // Log the content read
-                        memcpy(buf, response.content().data(), size);
-                        return size; // Successfully read bytes
+                // Prepare the request
+                request.set_filedescriptor(fi->fh);
+                request.set_offset(offset);
+                request.set_size(size);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsRead(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        int64_t len = response.size();
+
+                        if (len <= size) {
+                            size = len;
+                            cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
+                            cout << "Content: " << response.content() << endl; // Log the content read
+                            memcpy(buf, response.content().data(), size);
+                            return size; // Successfully read bytes
+                        } else {
+                            cerr << "Error: Read size (" << len << ") exceeds buffer size (" << size << ")." << endl;
+                            return -EFBIG; // Return an error indicating that the file is too large
+                        }
                     } else {
-                        cerr << "Error: Read size (" << len << ") exceeds buffer size (" << size << ")." << endl;
-                        return -EFBIG; // Return an error indicating that the file is too large
+                        cerr << "gRPC NfsRead failed: " << response.message() << endl;
+                        return -response.errorcode(); // Return the error code from server to FUSE as a negative value
                     }
                 } else {
-                    cerr << "gRPC NfsRead failed: " << response.message() << endl;
-                    return -response.errorcode(); // Return the errorcode from server to FUSE as a negative value
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO;
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Input/output error for failed communication
             }
+
+            cerr << "Failed to read after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
 
         static int nfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) {
             cout << "Reading directory: " << path << endl;
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsReadDirRequest request;
-            NfsReadDirResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_path(path);
-            Status status = FuseGrpcClient::instance_->stub_->NfsReadDir(&context, request, &response);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsReadDirRequest request;
+                NfsReadDirResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    // Add files from the response
-                    for (const auto& file : response.files()) {
-                        cout << file.c_str() << endl;
-                        filler(buf, file.c_str(), NULL, 0, FUSE_FILL_DIR_PLUS);
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare the request
+                request.set_path(path);
+
+                // Make the gRPC call
+                Status status = FuseGrpcClient::instance_->stub_->NfsReadDir(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        // Add files from the response
+                        for (const auto& file : response.files()) {
+                            cout << file.c_str() << endl;
+                            filler(buf, file.c_str(), NULL, 0, FUSE_FILL_DIR_PLUS);
+                        }
+                        return 0; // Operation successful
+                    } else {
+                        cerr << "gRPC NfsReadDir failed: " << response.message() << endl;
+                        return -response.errorcode(); // Return the error code from server to FUSE as a negative value
                     }
-                    return 0; // Operation successful
                 } else {
-                    cerr << "gRPC NfsReadDir failed: " << response.message() << endl;
-                    return -response.errorcode(); // Return the errorcode from server to FUSE as a negative value
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO;
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Input/output error for failed communication
             }
+
+            cerr << "Failed to read directory after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
 
         static int nfs_unlink(const char *path) {
             cout << "Unlinking file: " << path << endl;
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsUnlinkRequest request;
-            NfsUnlinkResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_path(path);
-            Status status = instance_->stub_->NfsUnlink(&context, request, &response);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsUnlinkRequest request;
+                NfsUnlinkResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    cout << "File unlinked successfully: " << path << endl;
-                    return 0; // File unlinked successfully
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare the request
+                request.set_path(path);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsUnlink(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        cout << "File unlinked successfully: " << path << endl;
+                        return 0; // File unlinked successfully
+                    } else {
+                        cerr << "gRPC NfsUnlink failed: " << response.message() << endl;
+                        return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                    }
                 } else {
-                    cerr << "gRPC NfsUnlink failed: " << response.message() << endl;
-                    return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO;
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Input/output error for failed communication
             }
+
+            cerr << "Failed to unlink file after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
 
         static int nfs_rmdir(const char *path) {
             cout << "Removing directory: " << path << endl;
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsRmdirRequest request;
-            NfsRmdirResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_path(path);
-            Status status = instance_->stub_->NfsRmdir(&context, request, &response);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsRmdirRequest request;
+                NfsRmdirResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    cout << "Directory removed successfully: " << path << endl;
-                    return 0; // Directory removed successfully
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare the request
+                request.set_path(path);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsRmdir(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        cout << "Directory removed successfully: " << path << endl;
+                        return 0; // Directory removed successfully
+                    } else {
+                        cerr << "gRPC NfsRmdir failed: " << response.message() << endl;
+                        return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                    }
                 } else {
-                    cerr << "gRPC NfsRmdir failed: " << response.message() << endl;
-                    return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO;
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Input/output error for failed communication
             }
+
+            cerr << "Failed to remove directory after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
 
         static int nfs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
@@ -274,56 +464,103 @@ class FuseGrpcClient {
                 mode = 0666;
             }
 
-            ClientContext context;
-            NfsCreateRequest request;
-            NfsCreateResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_path(path);
-            request.set_mode(mode);
-            Status status = instance_->stub_->NfsCreate(&context, request, &response);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsCreateRequest request;
+                NfsCreateResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    cout << "File created successfully: " << path << endl;
-                    fi->fh = response.filehandle();
-                    return 0;
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare the request
+                request.set_path(path);
+                request.set_mode(mode);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsCreate(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        cout << "File created successfully: " << path << endl;
+                        fi->fh = response.filehandle();
+                        return 0; // File created successfully
+                    } else {
+                        cerr << "gRPC NfsCreate failed: " << response.message() << endl;
+                        return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+                    }
                 } else {
-                    cerr << "gRPC NfsCreate failed: " << response.message() << endl;
-                    return -response.errorcode();
-                }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO;
-            }
-        }
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO; // Input/output error for failed communication
+                    }
+                }
+            }
+
+            cerr << "Failed to create file after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
+        }
 
         static int nfs_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
             cout << "Updating timestamps for path: " << path << endl;
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsUtimensRequest request;
-            NfsUtimensResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_path(path);
-            request.set_atime(tv[0].tv_sec);  // Set access time from tv[0]
-            request.set_mtime(tv[1].tv_sec);  // Set modification time from tv[1]
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsUtimensRequest request;
+                NfsUtimensResponse response;
 
-            Status status = instance_->stub_->NfsUtimens(&context, request, &response);
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
 
-            if (status.ok()) {
-                if (response.success()) {
-                    cout << "Timestamps updated successfully for path: " << path << endl;
-                    return 0; // Success
+                // Prepare the request
+                request.set_path(path);
+                request.set_atime(tv[0].tv_sec);  // Set access time from tv[0]
+                request.set_mtime(tv[1].tv_sec);  // Set modification time from tv[1]
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsUtimens(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        cout << "Timestamps updated successfully for path: " << path << endl;
+                        return 0; // Success
+                    } else {
+                        cerr << "gRPC NfsUtimens failed: " << response.errorcode() << " - " << response.message() << endl;
+                        return -response.errorcode(); // Return the error code from server
+                    }
                 } else {
-                    cerr << "gRPC NfsUtimens failed: " << response.errorcode() << " - " << response.message() << endl;
-                    return -response.errorcode(); // Return the error code from server
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO; // Input/output error for failed communication
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Communication failure, return I/O error
             }
+
+            cerr << "Failed to update timestamps after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
 
         static int nfs_mkdir(const char *path, mode_t mode) {
@@ -332,27 +569,51 @@ class FuseGrpcClient {
             }
             cout << "Creating directory: " << path << " with mode: " << mode << endl;
 
-            // Create gRPC client context and request/response objects
-            ClientContext context;
-            NfsMkdirRequest request;
-            NfsMkdirResponse response;
+            int max_retries = 3;  // Set the maximum number of retries
+            int retry_count = 0;  // Initialize retry count
 
-            request.set_path(path);
-            request.set_mode(mode);
-            Status status = instance_->stub_->NfsMkdir(&context, request, &response);
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsMkdirRequest request;
+                NfsMkdirResponse response;
 
-            if (status.ok()) {
-                if (response.success()) {
-                    cout << "Directory created successfully: " << path << endl;
-                    return 0; // Success
+                // Set timeout for the request (e.g., 1 second)
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare the request
+                request.set_path(path);
+                request.set_mode(mode);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsMkdir(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        cout << "Directory created successfully: " << path << endl;
+                        return 0; // Success
+                    } else {
+                        cerr << "gRPC NfsMkdir failed with error code: " << response.errorcode() << " - " << response.message() << endl;
+                        return -response.errorcode(); // Return the error code from the server
+                    }
                 } else {
-                    cerr << "gRPC NfsMkdir failed with error code: " << response.errorcode() << " - " << response.message() << endl;
-                    return -response.errorcode(); // Return the error code from the server
+                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                    } else {
+                        // Other errors, don't retry
+                        return -EIO; // Input/output error for failed communication
+                    }
                 }
-            } else {
-                cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                return -EIO; // Communication failure, return I/O error
             }
+
+            cerr << "Failed to create directory after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
         }
 
         static int nfs_truncate(const char *path, off_t size, struct fuse_file_info *fi) {
