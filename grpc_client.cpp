@@ -17,19 +17,30 @@ using namespace std;
 
 #define RUN_SYNC false
 
+struct WriteCommand {
+    std::string path;
+    std::string content;
+    size_t size;
+    off_t offset;
+    std::string write_verifier;
+};
+
 class FuseGrpcClient {
     private:
-        shared_ptr<Channel> channel_;
+        // shared_ptr<Channel> channel_;
+        std::vector<WriteCommand> write_cache_;
         unique_ptr<GrpcService::Stub> stub_;
         static FuseGrpcClient* instance_;
-        string target_;
+        std::vector<WriteCommand> write_commands_;
+        std::set<std::string> write_verifiers_;
+        // string target_;
 
     public:
         FuseGrpcClient(shared_ptr<Channel> channel, const string& target) {
-            channel_ = channel;
-            stub_     = GrpcService::NewStub(channel_);
+            // channel_ = channel;
+            stub_     = GrpcService::NewStub(channel);
             instance_ = this;
-            target_ = target;
+            // target_ = target;
 
             // Pings server
             ClientContext context;
@@ -95,11 +106,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -110,18 +121,65 @@ class FuseGrpcClient {
             cerr << "Failed to get attributes after " << max_retries << " retries." << endl;
             return -EIO; // Input/output error for failed retries
         }
+        
+        int resend_write_command(WriteCommand& cmd) {
+            cout << "Resending write command for path: " << cmd.path << endl;
+
+            // Create gRPC client context and request/response objects
+            ClientContext context;
+            NfsWriteRequest request;
+            NfsWriteResponse response;
+
+            // Set timeout for the request
+            auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(1);
+            context.set_deadline(deadline);
+
+            // Prepare the request
+            request.set_path(cmd.path);
+            request.set_content(cmd.content);
+            request.set_size(cmd.size);
+            request.set_offset(cmd.offset);
+
+            // Make the gRPC call
+            Status status;
+            if (RUN_SYNC) {
+                status = instance_->stub_->NfsWrite(&context, request, &response);
+            } else {
+                status = instance_->stub_->NfsWriteAsync(&context, request, &response);
+            }
+
+            if (status.ok() && response.success()) {
+                // Update the write_verifier with the new one from the server
+                cmd.write_verifier = response.write_verifier();
+                cout << "Write command resent successfully for path: " << cmd.path << endl;
+                cout << "New write_verifier: " << cmd.write_verifier << endl;
+                return 0;
+            } else {
+                cerr << "Failed to resend write command: " << status.error_message() << endl;
+                return -EIO;
+            }
+        }
 
         static int nfs_release(const char *path, struct fuse_file_info *fi) {
             cout << "Releasing file: " << path << endl;
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
-            int backoff_time = 1; // Initial backoff time in seconds
+            int backoff_time = 5; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
-                // Create gRPC client context and request/response objects
-                ClientContext context;
+
+                // Prepare NfsReleaseRequest
                 NfsReleaseRequest request;
+                request.set_path(path);
+                request.set_flags(fi->flags);
+                for (const auto& ver : instance_->write_verifiers_) {
+                    cout << "Adding write_verifier: " << ver << endl;
+                    request.add_write_verifiers(ver);
+                }
+
+                // Send request and handle response
+                ClientContext context;
                 NfsReleaseResponse response;
 
                 // Set timeout for the request
@@ -143,10 +201,41 @@ class FuseGrpcClient {
                 if (status.ok()) {
                     if (response.success()) {
                         cout << "File released successfully: " << path << endl;
+                        instance_->write_commands_.clear();
+                        instance_->write_verifiers_.clear();
                         return 0; // Operation successful
                     } else {
                         cerr << "gRPC NfsRelease failed: " << response.message() << endl;
-                        return -response.errorcode(); // Map the errno from server to FUSE error code
+
+                        if (response.current_write_verifier() != "-1") {
+                            // Missing writes due to write_verifier mismatch
+                            cout << "Missing writes detected due to write_verifier mismatch. Resending write commands." << endl;
+
+                            std::string valid_write_verifier = response.current_write_verifier();
+
+                            // Resend write commands with invalid write_verifiers
+                            for (auto& cmd : instance_->write_commands_) {
+                                if (cmd.write_verifier != valid_write_verifier) {
+                                    // Resend the write command
+                                    int resend_status = instance_->resend_write_command(cmd);
+                                    if (resend_status < 0) {
+                                        cerr << "Failed to resend write command for path: " << cmd.path << endl;
+                                    }
+                                }
+                            }
+                            // Update the set of write_verifiers
+                            instance_->write_verifiers_.clear();
+                            for (const auto& cmd : instance_->write_commands_) {
+                                instance_->write_verifiers_.insert(cmd.write_verifier);
+                            }
+
+                            // Retry release
+                            retry_count++;
+                            continue;
+                        } else {
+                            // Handle other errors
+                            return -response.errorcode();
+                        }
                     }
                 } else {
                     cerr << "nfs_release gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
@@ -164,11 +253,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -228,11 +317,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -252,7 +341,6 @@ class FuseGrpcClient {
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
             int backoff_time = 1; // Initial backoff time in seconds
-
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -281,6 +369,20 @@ class FuseGrpcClient {
                 if (status.ok()) {
                     if (response.success()) {
                         int64_t len = response.bytes_written();
+                        std::string write_verifier = response.write_verifier();
+
+                        // Store the write command and write_verifier
+                        WriteCommand command;
+                        command.path = path;
+                        command.content = std::string(buf, size);
+                        command.size = size;
+                        command.offset = offset;
+                        command.write_verifier = write_verifier;
+
+                        instance_->write_commands_.push_back(command);
+
+                        instance_->write_verifiers_.insert(write_verifier);
+
                         return len; // Operation successful, return bytes written
                     } else {
                         cerr << "gRPC NfsWrite failed: " << response.message() << endl;
@@ -302,11 +404,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -379,11 +481,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -446,11 +548,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -509,11 +611,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -572,11 +674,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -641,11 +743,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -706,11 +808,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -773,11 +875,11 @@ class FuseGrpcClient {
                         backoff_time *= 2;
 
                         // Reconnect if UNAVAILABLE
-                        if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            cout << "Re-establishing gRPC connection..." << endl;
-                            instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                            instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        }
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -826,8 +928,15 @@ int main(int argc, char** argv) {
 
     string target_str = argv[1]; // Expecting server ip address:port
 
+    grpc::ChannelArguments args;
+    args.SetInt(GRPC_ARG_MAX_RECONNECT_BACKOFF_MS, 5000);
+    args.SetInt(GRPC_ARG_MIN_RECONNECT_BACKOFF_MS, 1000);
+
+    auto channel = grpc::CreateCustomChannel(target_str, grpc::InsecureChannelCredentials(), args);
+
     // Create the gRPC client
-    FuseGrpcClient client(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()), target_str);
+    FuseGrpcClient client(channel, target_str);
+    // FuseGrpcClient client(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()), target_str);
     
     // Pass the rest of the arguments to run_fuse_main
     // Reduce the argument count by 1, and move the argument pointer to the next arg

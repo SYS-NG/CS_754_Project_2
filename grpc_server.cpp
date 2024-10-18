@@ -36,9 +36,15 @@ class grpcServices final : public grpc_service::GrpcService::Service {
     private:
         std::string directory_path_; // Where All the files will get mounted
         std::unordered_map<std::string, vector<WriteCommand>> file_handle_map_; // Maps file handle to their write commands
+        std::string write_verifier_; // Write verifier for the current server instance
 
     public: 
-        grpcServices(const std::string& directory_path) : directory_path_(directory_path) {}
+        grpcServices(const std::string& directory_path) : directory_path_(directory_path) {
+            auto now = std::chrono::system_clock::now();
+            auto now_c = std::chrono::system_clock::to_time_t(now);
+            write_verifier_ = std::to_string(now_c);
+            cout << "Write verifier initialized: " << write_verifier_ << endl;
+        }
 
         Status Ping(
             ServerContext*                   context,
@@ -254,8 +260,38 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             grpc_service::NfsReleaseResponse* response
         ) override {
             const std::string path  = request->path();
-            const int64_t     flags = request->flags(); 
+            const int64_t     flags = request->flags();
+            const std::string& valid_write_verifier = write_verifier_;
             cout << "NfsReleaseAsync called with file handle: " << path << endl;
+
+            cout << "Retrieving write commands for file handle: " << path << endl;
+            std::vector<WriteCommand> write_commands = file_handle_map_[path];
+            cout << "Number of write commands retrieved: " << write_commands.size() << endl;
+
+            response->set_current_write_verifier("-1");
+
+            if(write_commands.empty()) {
+                response->set_success(true);
+                response->set_message("File released successfully");
+                return Status::OK;
+            }
+
+            bool all_verifiers_match = true;
+            for (const auto& ver : request->write_verifiers()) {
+                cout << "Checking write verifier: " << ver << endl;
+                if (ver != valid_write_verifier) {
+                    all_verifiers_match = false;
+                    break;
+                }
+            }
+
+            if (!all_verifiers_match) {
+                response->set_success(false);
+                response->set_message("Invalid write_verifier(s) detected");
+                response->set_errorcode(EIO);
+                response->set_current_write_verifier(valid_write_verifier);
+                return Status::OK;
+            }
 
             // Open the file and get the file descriptor
             int file_descriptor = open((directory_path_ + path).c_str(), flags);
@@ -266,6 +302,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 response->set_message("File not found");
                 return Status::OK;
             }
+            
             
             // Need to push to disk
             // First sort the WriteCommands under the file descriptor by offset
@@ -279,9 +316,6 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             // on to the next commands
             //
             // At the end using the final write command vector, write to the file descriptor
-            cout << "Retrieving write commands for file handle: " << path << endl;
-            std::vector<WriteCommand> write_commands = file_handle_map_[path];
-            cout << "Number of write commands retrieved: " << write_commands.size() << endl;
 
             cout << "Sorting write commands by offset." << endl;
             std::sort(write_commands.begin(), write_commands.end(), [](const WriteCommand& a, const WriteCommand& b) {
@@ -350,7 +384,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             }
 
             cout << "Clearing the file descriptor map." << endl;
-            file_handle_map_.clear(); // Clear the file descriptor map
+            file_handle_map_.erase(path); // Clear the file descriptor map
 
             if (close(file_descriptor) == 0) {
                 cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
@@ -449,6 +483,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_success(true);
             response->set_message("Data buffered successfully");
             response->set_bytes_written(size); // Return the number of bytes intended to be written
+            response->set_write_verifier(write_verifier_); // Return the current write verifier
             return Status::OK;
         }
 

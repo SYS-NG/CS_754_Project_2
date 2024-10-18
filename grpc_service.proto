@@ -104,12 +104,14 @@ message NfsReleaseRequest {
   // int64 filedescriptor = 3; // File handle returned upon successful open
   string path = 4; // Path of the file to open
   int64  flags = 5;
+  repeated string write_verifiers = 2;
 }
 
 message NfsReleaseResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
   int32 errorcode = 3; // System error number if operation failed
+  string current_write_verifier = 4; // The server's current valid write_verifier
 }
 
 //======================================================================
@@ -125,6 +127,7 @@ message NfsWriteResponse {
   string message = 2; // Message for additional information
   int64 bytes_written = 3; // Number of bytes written
   int32 errorcode = 4; // System error number if operation failed
+  string write_verifier = 5;
 }
 
 //=============================================================
