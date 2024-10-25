@@ -31,8 +31,8 @@ class FuseGrpcClient {
         std::vector<WriteCommand> write_cache_;
         unique_ptr<GrpcService::Stub> stub_;
         static FuseGrpcClient* instance_;
-        std::vector<WriteCommand> write_commands_;
-        std::set<std::string> write_verifiers_;
+        std::map<std::string, std::vector<WriteCommand>> write_commands_;
+        std::map<std::string, std::set<std::string>> write_verifiers_;
         // string target_;
 
     public:
@@ -173,7 +173,7 @@ class FuseGrpcClient {
                 NfsReleaseRequest request;
                 request.set_path(path);
                 request.set_flags(fi->flags);
-                for (const auto& ver : instance_->write_verifiers_) {
+                for (const auto& ver : instance_->write_verifiers_[path]) {
                     cout << "Adding write_verifier: " << ver << endl;
                     request.add_write_verifiers(ver);
                 }
@@ -201,8 +201,8 @@ class FuseGrpcClient {
                 if (status.ok()) {
                     if (response.success()) {
                         cout << "File released successfully: " << path << endl;
-                        instance_->write_commands_.clear();
-                        instance_->write_verifiers_.clear();
+                        instance_->write_commands_.erase(path);
+                        instance_->write_verifiers_.erase(path);
                         return 0; // Operation successful
                     } else {
                         cerr << "gRPC NfsRelease failed: " << response.message() << endl;
@@ -214,7 +214,7 @@ class FuseGrpcClient {
                             std::string valid_write_verifier = response.current_write_verifier();
 
                             // Resend write commands with invalid write_verifiers
-                            for (auto& cmd : instance_->write_commands_) {
+                            for (auto& cmd : instance_->write_commands_[path]) {
                                 if (cmd.write_verifier != valid_write_verifier) {
                                     // Resend the write command
                                     int resend_status = instance_->resend_write_command(cmd);
@@ -224,9 +224,9 @@ class FuseGrpcClient {
                                 }
                             }
                             // Update the set of write_verifiers
-                            instance_->write_verifiers_.clear();
-                            for (const auto& cmd : instance_->write_commands_) {
-                                instance_->write_verifiers_.insert(cmd.write_verifier);
+                            instance_->write_verifiers_[path].clear();
+                            for (const auto& cmd : instance_->write_commands_[path]) {
+                                instance_->write_verifiers_[path].insert(cmd.write_verifier);
                             }
 
                             // Retry release
@@ -379,9 +379,9 @@ class FuseGrpcClient {
                         command.offset = offset;
                         command.write_verifier = write_verifier;
 
-                        instance_->write_commands_.push_back(command);
+                        instance_->write_commands_[path].push_back(command);
 
-                        instance_->write_verifiers_.insert(write_verifier);
+                        instance_->write_verifiers_[path].insert(write_verifier);
 
                         return len; // Operation successful, return bytes written
                     } else {
