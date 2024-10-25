@@ -7,6 +7,7 @@
 #include <grpcpp/grpcpp.h>
 #include <fuse3/fuse.h>
 #include "grpc_service.grpc.pb.h"
+#include <thread>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -22,7 +23,7 @@ class FuseGrpcClient {
         static FuseGrpcClient* instance_;
 
     public:
-        FuseGrpcClient(shared_ptr<Channel> channel) {
+        FuseGrpcClient(shared_ptr<Channel> channel, const string& target) {
             stub_     = GrpcService::NewStub(channel);
             instance_ = this;
 
@@ -47,6 +48,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -75,13 +77,25 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Map the errno from server to FUSE error code
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
-                    
-                    // Rerty on timeout or transient error
+                    cerr << "nfs_getattr gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -93,12 +107,12 @@ class FuseGrpcClient {
             return -EIO; // Input/output error for failed retries
         }
 
-
         static int nfs_release(const char *path, struct fuse_file_info *fi) {
             cout << "Releasing file: " << path << " with file handle: " << fi->fh << endl;
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -130,13 +144,26 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Map the errno from server to FUSE error code
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_release gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -153,6 +180,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -180,13 +208,26 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Return the error code from server to FUSE as a negative value
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_open gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -205,6 +246,8 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
+
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -239,13 +282,26 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Map the errno from server to FUSE error code
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_write gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -257,11 +313,110 @@ class FuseGrpcClient {
             return -EIO; // Input/output error for failed retries
         }
 
+        // static int nfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+        //     cout << "Reading file: " << path << endl;
+
+        //     int max_retries = 3;  // Set the maximum number of retries
+        //     int retry_count = 0;  // Initialize retry count
+        //     int backoff_time = 1; // Initial backoff time in seconds
+
+        //     while (retry_count < max_retries) {
+        //         // Create gRPC client context and request/response objects
+        //         ClientContext context;
+        //         NfsReadRequest request;
+        //         NfsReadResponse response;
+
+        //         // Set timeout for the request (e.g., 1 second)
+        //         auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+        //         context.set_deadline(deadline);
+
+        //         // Prepare the request
+        //         request.set_filedescriptor(fi->fh);
+        //         request.set_offset(offset);
+        //         request.set_size(size);
+
+        //         // Make the gRPC call
+        //         Status status = instance_->stub_->NfsRead(&context, request, &response);
+
+        //         if (status.ok()) {
+        //             if (response.success()) {
+        //                 int64_t len = response.size();
+
+        //                 if (len <= size) {
+        //                     size = len;
+        //                     cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
+        //                     memcpy(buf, response.content().data(), size);
+        //                     return size; // Successfully read bytes
+        //                 } else {
+        //                     cerr << "Error: Read size (" << len << ") exceeds buffer size (" << size << ")." << endl;
+        //                     return -EFBIG; // Return an error indicating that the file is too large
+        //                 }
+        //             } else {
+        //                 cerr << "gRPC NfsRead failed: " << response.message() << endl;
+
+        //                 // If the error is EBADF (Bad file descriptor), attempt recovery
+        //                 if (response.errorcode() == EBADF) {
+        //                     cout << "File descriptor invalid, attempting recovery..." << endl;
+                            
+        //                     // Attempt to recover by doing lookup and open again
+        //                     int getattr_status = nfs_getattr(path, nullptr, nullptr); // Ensure file exists
+        //                     if (getattr_status != 0) {
+        //                         cerr << "Failed to recover: getattr failed." << endl;
+        //                         return getattr_status; // Return the failure code from getattr
+        //                     }
+
+        //                     // Try to open the file again
+        //                     int open_status = nfs_open(path, fi);
+        //                     if (open_status != 0) {
+        //                         cerr << "Failed to recover: open failed." << endl;
+        //                         return open_status; // Return the failure code from open
+        //                     }
+
+        //                     // After successful recovery, continue to retry the read
+        //                     retry_count++;
+        //                     continue; // Retry reading after recovery
+        //                 }
+
+        //                 return -response.errorcode(); // Return the error code from server to FUSE as a negative value
+        //             }
+        //         } else {
+        //             cerr << "nfs_read gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+        //             // Retry on timeout or transient error
+        //             if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+        //                 status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+        //                 retry_count++;
+        //                 cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+        //                 // Wait for a backoff period before retrying
+        //                 this_thread::sleep_for(chrono::seconds(backoff_time));
+
+        //                 // Increase backoff time for the next retry
+        //                 backoff_time *= 2;
+
+        //                 // Reconnect if UNAVAILABLE
+        //                 if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+        //                     cout << "Re-establishing gRPC connection..." << endl;
+        //                     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+        //                     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+        //                 }
+        //             } else {
+        //                 // Other errors, don't retry
+        //                 return -EIO;
+        //             }
+        //         }
+        //     }
+
+        //     cerr << "Failed to read after " << max_retries << " retries." << endl;
+        //     return -EIO; // Input/output error for failed retries
+        // }
+
         static int nfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
             cout << "Reading file: " << path << endl;
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -300,13 +455,26 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Return the error code from server to FUSE as a negative value
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_read gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -323,6 +491,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -353,13 +522,26 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Return the error code from server to FUSE as a negative value
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_readdir gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -376,6 +558,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -402,13 +585,26 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Return the error code from server to FUSE as a negative value
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_unlink gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -425,6 +621,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -451,13 +648,26 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Return the error code from server to FUSE as a negative value
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_rmdir gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
                         return -EIO;
@@ -478,6 +688,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -506,16 +717,29 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Return the error code from server to FUSE as a negative value
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_create gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
-                        return -EIO; // Input/output error for failed communication
+                        return -EIO;
                     }
                 }
             }
@@ -529,6 +753,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -557,16 +782,29 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Return the error code from server
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_utimens gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
-                        return -EIO; // Input/output error for failed communication
+                        return -EIO;
                     }
                 }
             }
@@ -583,6 +821,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
+            int backoff_time = 1; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -610,16 +849,29 @@ class FuseGrpcClient {
                         return -response.errorcode(); // Return the error code from the server
                     }
                 } else {
-                    cerr << "gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    cerr << "nfs_mkdir gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
 
                     // Retry on timeout or transient error
                     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
                         status.error_code() == grpc::StatusCode::UNAVAILABLE) {
                         retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << "..." << endl;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+
+                        // Reconnect if UNAVAILABLE
+                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        //     cout << "Re-establishing gRPC connection..." << endl;
+                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                        // }
                     } else {
                         // Other errors, don't retry
-                        return -EIO; // Input/output error for failed communication
+                        return -EIO;
                     }
                 }
             }
@@ -665,8 +917,15 @@ int main(int argc, char** argv) {
 
     string target_str = argv[1]; // Expecting server ip address:port
 
+    grpc::ChannelArguments args;
+    args.SetInt(GRPC_ARG_MAX_RECONNECT_BACKOFF_MS, 5000);
+    args.SetInt(GRPC_ARG_MIN_RECONNECT_BACKOFF_MS, 1000);
+
+    auto channel = grpc::CreateCustomChannel(target_str, grpc::InsecureChannelCredentials(), args);
+
     // Create the gRPC client
-    FuseGrpcClient client(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+    FuseGrpcClient client(channel, target_str);
+    // FuseGrpcClient client(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()), target_str);
     
     // Pass the rest of the arguments to run_fuse_main
     // Reduce the argument count by 1, and move the argument pointer to the next arg

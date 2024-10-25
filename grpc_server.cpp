@@ -280,6 +280,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 if (lseek(file_descriptor, cmd.offset, SEEK_SET) == (off_t)-1) {
                     cerr << "Failed to seek to offset: " << cmd.offset << " for file descriptor: " << file_descriptor << endl;
                     response->set_success(false);
+                    response->set_errorcode(errno);
                     response->set_message("File seek failed");
                     return Status::OK;
                 }
@@ -289,6 +290,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                     cerr << "Failed to write to file descriptor: " << file_descriptor 
                          << ", error: " << strerror(errno) << endl;
                     response->set_success(false);
+                    response->set_errorcode(errno);
                     response->set_message("File write failed");
                     return Status::OK;
                 }
@@ -349,6 +351,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (lseek(file_descriptor, offset, SEEK_SET) == (off_t)-1) {
                 cerr << "Failed to seek to offset: " << offset << " in file descriptor: " << file_descriptor << endl;
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File seek failed");
                 return Status::OK;
             }
@@ -358,6 +361,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (bytes_written < 0) {
                 cerr << "Failed to write to file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl; // Debug log with error message
                 response->set_success(false);
+                response->set_errorcode(errno);
                 response->set_message("File write failed");
                 return Status::OK;
             }
