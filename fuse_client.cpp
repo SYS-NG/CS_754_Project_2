@@ -1,63 +1,201 @@
+#include <iostream>
+#include <chrono>
 #include <fcntl.h>
 #include <unistd.h>
-#include <iostream>
-#include <cerrno>
-#include <cstring>
-#include <chrono>
+#include <sys/stat.h>
+#include <dirent.h>
 
+// Measure latency of `getattr` operation
+double measureGetattrLatency(const char* filePath) {
+    struct stat st;
 
-int main() {
-    const char* filePath = "./mnt/125"; // 替换为你挂载的FUSE文件路径
-    const size_t bufferSize = 4096; // 假设读取4KB的数据
+    auto start = std::chrono::high_resolution_clock::now();
+    int result = stat(filePath, &st);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (result != 0) {
+        std::cerr << "Failed to get attributes for: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `mkdir` operation
+double measureMkdirLatency(const char* dirPath, mode_t mode = 0755) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int result = mkdir(dirPath, mode);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (result != 0) {
+        std::cerr << "Failed to create directory: " << dirPath << std::endl;
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `unlink` operation
+double measureUnlinkLatency(const char* filePath) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int result = unlink(filePath);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (result != 0) {
+        std::cerr << "Failed to unlink file: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `rmdir` operation
+double measureRmdirLatency(const char* dirPath) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int result = rmdir(dirPath);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (result != 0) {
+        std::cerr << "Failed to remove directory: " << dirPath << std::endl;
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `open` operation
+double measureOpenLatency(const char* filePath) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int fd = open(filePath, O_RDONLY);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (fd == -1) {
+        std::cerr << "Failed to open file: " << filePath << std::endl;
+        return -1.0;
+    }
+    close(fd);
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `read` operation
+double measureReadLatency(const char* filePath, size_t bufferSize) {
     char buffer[bufferSize];
 
-    // 打开文件
     int fd = open(filePath, O_RDONLY);
     if (fd == -1) {
         std::cerr << "Failed to open file: " << filePath << std::endl;
-        return 1;
+        return -1.0;
     }
 
-    // 记录读取开始时间
     auto start = std::chrono::high_resolution_clock::now();
-
-    // 执行读取操作，触发FUSE的read调用
     ssize_t bytesRead = read(fd, buffer, bufferSize);
+    auto end = std::chrono::high_resolution_clock::now();
 
-    // 记录读取结束时间
+    close(fd);
+
+    if (bytesRead < 0) {
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `readdir` operation
+double measureReaddirLatency(const char* dirPath) {
+    auto start = std::chrono::high_resolution_clock::now();
+    DIR* dir = opendir(dirPath);
+    if (!dir) {
+        std::cerr << "Failed to open directory: " << dirPath << std::endl;
+        return -1.0;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        // Process directory entry here if needed
+    }
+    closedir(dir);
+
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
 
-    // 检查读取结果
-    if (bytesRead >= 0) {
-        std::cout << "Read successful. Bytes read: " << bytesRead << std::endl;
-        std::cout << "Read latency: " << latency.count() << " ms" << std::endl;
-    } else {
-        std::cerr << "Read failed with error." << std::endl;
+// Measure latency of `create` operation
+double measureCreateLatency(const char* filePath, mode_t mode = 0644) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, mode);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (fd == -1) {
+        std::cerr << "Failed to create file: " << filePath << std::endl;
+        return -1.0;
+    }
+    close(fd);
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+int main() {
+    const char* testDirPath = "./mnt/testdir";
+    const char* testExistFilePath = "./mnt/1255";
+    const char* testFilePath = "./mnt/testdir/testfile";
+    const size_t bufferSize = 4096;
+
+    // Test getattr
+    double getattrLatency = measureGetattrLatency(testExistFilePath);
+    if (getattrLatency >= 0) {
+        std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
     }
 
-    // 关闭文件
-    // close(fd);
+    // Test mkdir
+    double mkdirLatency = measureMkdirLatency(testDirPath);
+    if (mkdirLatency >= 0) {
+        std::cout << "Mkdir latency: " << mkdirLatency << " ms" << std::endl;
+    }
+
+    // Test create
+    double createLatency = measureCreateLatency(testFilePath);
+    if (createLatency >= 0) {
+        std::cout << "Create latency: " << createLatency << " ms" << std::endl;
+    }
+
+    // Test open
+    double openLatency = measureOpenLatency(testFilePath);
+    if (openLatency >= 0) {
+        std::cout << "Open latency: " << openLatency << " ms" << std::endl;
+    }
+
+    // Test read
+    double readLatency = measureReadLatency(testExistFilePath, bufferSize);
+    if (readLatency >= 0) {
+        std::cout << "Read latency: " << readLatency << " ms" << std::endl;
+    }
+
+    // Test readdir
+    double readdirLatency = measureReaddirLatency(testDirPath);
+    if (readdirLatency >= 0) {
+        std::cout << "Readdir latency: " << readdirLatency << " ms" << std::endl;
+    }
+
+    // Test unlink
+    double unlinkLatency = measureUnlinkLatency(testFilePath);
+    if (unlinkLatency >= 0) {
+        std::cout << "Unlink latency: " << unlinkLatency << " ms" << std::endl;
+    }
+
+    // Test rmdir
+    double rmdirLatency = measureRmdirLatency(testDirPath);
+    if (rmdirLatency >= 0) {
+        std::cout << "Rmdir latency: " << rmdirLatency << " ms" << std::endl;
+    }
 
     return 0;
 }
-
-// int main() {
-//     const char* filename = "./mnt/newfile.txt"; // FUSE 挂载点下的文件路径
-//     mode_t mode = 0640; // 文件权限
-
-//     // 使用 creat 系统调用单独触发 create 操作
-//     int fd = creat(filename, mode);
-
-//     if (fd == -1) {
-//         std::cerr << "Failed to create file: " << strerror(errno) << std::endl;
-//         return 1;
-//     }
-
-//     std::cout << "File created successfully." << std::endl;
-
-//     // 关闭文件描述符
-//     close(fd);
-
-//     return 0;
-// }
