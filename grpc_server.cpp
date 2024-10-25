@@ -270,28 +270,45 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             response->set_current_write_verifier("-1");
 
-            if(write_commands.empty()) {
+            if(request->write_verifiers().empty()) {
                 response->set_success(true);
                 response->set_message("File released successfully");
                 return Status::OK;
             }
 
-            bool all_verifiers_match = true;
-            for (const auto& ver : request->write_verifiers()) {
-                cout << "Checking write verifier: " << ver << endl;
-                if (ver != valid_write_verifier) {
-                    all_verifiers_match = false;
-                    break;
+            if (request->write_verifiers().size() == 1) {
+                cout << "Checking write verifier: " << request->write_verifiers(0) << endl;
+                if (request->write_verifiers(0) != valid_write_verifier) {
+                    response->set_success(false);
+                    response->set_message("Invalid write_verifier detected");
+                    response->set_errorcode(EIO);
+                    response->set_current_write_verifier(valid_write_verifier);
+                    return Status::OK;
                 }
-            }
-
-            if (!all_verifiers_match) {
+            } else {
                 response->set_success(false);
-                response->set_message("Invalid write_verifier(s) detected");
+                response->set_message("Multiple write_verifiers detected, assuming a mismatch");
                 response->set_errorcode(EIO);
                 response->set_current_write_verifier(valid_write_verifier);
                 return Status::OK;
             }
+
+            // bool all_verifiers_match = true;
+            // for (const auto& ver : request->write_verifiers()) {
+            //     cout << "Checking write verifier: " << ver << endl;
+            //     if (ver != valid_write_verifier) {
+            //         all_verifiers_match = false;
+            //         break;
+            //     }
+            // }
+
+            // if (!all_verifiers_match) {
+            //     response->set_success(false);
+            //     response->set_message("Invalid write_verifier(s) detected");
+            //     response->set_errorcode(EIO);
+            //     response->set_current_write_verifier(valid_write_verifier);
+            //     return Status::OK;
+            // }
 
             // Open the file and get the file descriptor
             int file_descriptor = open((directory_path_ + path).c_str(), flags);
