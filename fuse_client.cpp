@@ -1,76 +1,201 @@
-#define FUSE_USE_VERSION 31
-// #include "/u7/x47zou/.local/include/fuse3/fuse.h"
-#include <fuse3/fuse.h>
-#include <cstring>
 #include <iostream>
-#include <errno.h>
+#include <chrono>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <dirent.h>
 
-static const char *file_path = "/testfile";
-static const char *file_content = "Hello, FUSE!\n";
+// Measure latency of `getattr` operation
+double measureGetattrLatency(const char* filePath) {
+    struct stat st;
 
-// 获取文件或目录的属性
-static int nfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
-    memset(stbuf, 0, sizeof(struct stat));
-    if (strcmp(path, "/") == 0) { // 根目录
-        stbuf->st_mode = S_IFDIR | 0755;
-        stbuf->st_nlink = 2;
-    } else if (strcmp(path, file_path) == 0) { // 文件路径
-        stbuf->st_mode = S_IFREG | 0444;
-        stbuf->st_nlink = 1;
-        stbuf->st_size = strlen(file_content);
-    } else {
-        return -ENOENT;
-    }
-    return 0;
-}
+    auto start = std::chrono::high_resolution_clock::now();
+    int result = stat(filePath, &st);
+    auto end = std::chrono::high_resolution_clock::now();
 
-// 打开文件
-static int nfs_open(const char *path, struct fuse_file_info *fi) {
-    if (strcmp(path, file_path) != 0)
-        return -ENOENT;
-    return 0;
-}
-
-// 读取文件内容
-static int nfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-    if (strcmp(path, file_path) != 0)
-        return -ENOENT;
-
-    size_t len = strlen(file_content);
-    if (offset < len) {
-        if (offset + size > len)
-            size = len - offset;
-        memcpy(buf, file_content + offset, size);
-    } else {
-        size = 0;
-    }
-    return size;
-}
-
-// 读取目录内容
-static int nfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) {
-    
-    if (strcmp(path, "/") != 0) {
-        return -ENOENT;
+    if (result != 0) {
+        std::cerr << "Failed to get attributes for: " << filePath << std::endl;
+        return -1.0;
     }
 
-    // 添加默认目录项 '.' 和 '..'
-    filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
-    filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-
-    // 添加文件 'testfile'
-    filler(buf, "testfile", NULL, 0, FUSE_FILL_DIR_PLUS);
-
-    return 0;
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
 }
 
-static struct fuse_operations nfs_oper = {
-    .getattr = nfs_getattr,
-    .open = nfs_open,
-    .read = nfs_read,
-    .readdir = nfs_readdir, // 添加 readdir 函数
-};
+// Measure latency of `mkdir` operation
+double measureMkdirLatency(const char* dirPath, mode_t mode = 0755) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int result = mkdir(dirPath, mode);
+    auto end = std::chrono::high_resolution_clock::now();
 
-int main(int argc, char *argv[]) {
-    return fuse_main(argc, argv, &nfs_oper, NULL);
+    if (result != 0) {
+        std::cerr << "Failed to create directory: " << dirPath << std::endl;
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `unlink` operation
+double measureUnlinkLatency(const char* filePath) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int result = unlink(filePath);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (result != 0) {
+        std::cerr << "Failed to unlink file: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `rmdir` operation
+double measureRmdirLatency(const char* dirPath) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int result = rmdir(dirPath);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (result != 0) {
+        std::cerr << "Failed to remove directory: " << dirPath << std::endl;
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `open` operation
+double measureOpenLatency(const char* filePath) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int fd = open(filePath, O_RDONLY);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (fd == -1) {
+        std::cerr << "Failed to open file: " << filePath << std::endl;
+        return -1.0;
+    }
+    close(fd);
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `read` operation
+double measureReadLatency(const char* filePath, size_t bufferSize) {
+    char buffer[bufferSize];
+
+    int fd = open(filePath, O_RDONLY);
+    if (fd == -1) {
+        std::cerr << "Failed to open file: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    auto start = std::chrono::high_resolution_clock::now();
+    ssize_t bytesRead = read(fd, buffer, bufferSize);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    close(fd);
+
+    if (bytesRead < 0) {
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `readdir` operation
+double measureReaddirLatency(const char* dirPath) {
+    auto start = std::chrono::high_resolution_clock::now();
+    DIR* dir = opendir(dirPath);
+    if (!dir) {
+        std::cerr << "Failed to open directory: " << dirPath << std::endl;
+        return -1.0;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        // Process directory entry here if needed
+    }
+    closedir(dir);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+// Measure latency of `create` operation
+double measureCreateLatency(const char* filePath, mode_t mode = 0644) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, mode);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (fd == -1) {
+        std::cerr << "Failed to create file: " << filePath << std::endl;
+        return -1.0;
+    }
+    close(fd);
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
+int main() {
+    const char* testDirPath = "./mnt/testdir";
+    const char* testExistFilePath = "./mnt/1255";
+    const char* testFilePath = "./mnt/testdir/testfile";
+    const size_t bufferSize = 4096;
+
+    // Test getattr
+    double getattrLatency = measureGetattrLatency(testExistFilePath);
+    if (getattrLatency >= 0) {
+        std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
+    }
+
+    // Test mkdir
+    double mkdirLatency = measureMkdirLatency(testDirPath);
+    if (mkdirLatency >= 0) {
+        std::cout << "Mkdir latency: " << mkdirLatency << " ms" << std::endl;
+    }
+
+    // Test create
+    double createLatency = measureCreateLatency(testFilePath);
+    if (createLatency >= 0) {
+        std::cout << "Create latency: " << createLatency << " ms" << std::endl;
+    }
+
+    // Test open
+    double openLatency = measureOpenLatency(testFilePath);
+    if (openLatency >= 0) {
+        std::cout << "Open latency: " << openLatency << " ms" << std::endl;
+    }
+
+    // Test read
+    double readLatency = measureReadLatency(testExistFilePath, bufferSize);
+    if (readLatency >= 0) {
+        std::cout << "Read latency: " << readLatency << " ms" << std::endl;
+    }
+
+    // Test readdir
+    double readdirLatency = measureReaddirLatency(testDirPath);
+    if (readdirLatency >= 0) {
+        std::cout << "Readdir latency: " << readdirLatency << " ms" << std::endl;
+    }
+
+    // Test unlink
+    double unlinkLatency = measureUnlinkLatency(testFilePath);
+    if (unlinkLatency >= 0) {
+        std::cout << "Unlink latency: " << unlinkLatency << " ms" << std::endl;
+    }
+
+    // Test rmdir
+    double rmdirLatency = measureRmdirLatency(testDirPath);
+    if (rmdirLatency >= 0) {
+        std::cout << "Rmdir latency: " << rmdirLatency << " ms" << std::endl;
+    }
+
+    return 0;
 }

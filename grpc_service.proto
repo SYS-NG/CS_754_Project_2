@@ -71,9 +71,10 @@ message NfsReadDirResponse {
 //======================================================================
 // New messages for NfsRead
 message NfsReadRequest {
-  int64 filedescriptor = 1; // File handle to read
   int64 offset = 2;
   int64 size   = 3;
+  string path = 4; // Path of the file to open
+  int64  flags = 5;
 }
 
 message NfsReadResponse {
@@ -94,14 +95,13 @@ message NfsOpenRequest {
 message NfsOpenResponse {
   bool success = 1; // Indicates if the operation was successful
   string message = 2; // Message for additional information
-  int64 filedescriptor = 3; // File handle returned upon successful open
   int32 errorcode = 4; // System error number if operation failed
 }
 
 //======================================================================
 // New messages for NfsRelease
 message NfsReleaseRequest {
-  int64 filedescriptor = 1; // File handle to release
+  string path = 4; // Path of the file to open
 }
 
 message NfsReleaseResponse {
@@ -112,10 +112,11 @@ message NfsReleaseResponse {
 
 //======================================================================
 message NfsWriteRequest {
-  int64 filedescriptor = 1; // File handle to write to
+  string path = 1; // File handle to write to
   string content = 2; // Content to write to the file
   int64 size = 3; // Size of the content being written
   int64 offset = 4; // Offset for the file to write to
+  int64  flags = 5;
 }
 
 message NfsWriteResponse {
@@ -159,7 +160,6 @@ message NfsCreateRequest {
 message NfsCreateResponse {
   bool success = 1;
   string message = 2;
-  int64 filehandle = 3;
   int32 errorcode = 4; // System error number if operation failed
 }
 

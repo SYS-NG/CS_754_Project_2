@@ -15,7 +15,7 @@ using grpc::Status;
 using namespace grpc_service;
 using namespace std;
 
-#define RUN_SYNC false
+#define RUN_SYNC true
 
 class FuseGrpcClient {
     private:
@@ -108,7 +108,7 @@ class FuseGrpcClient {
         }
 
         static int nfs_release(const char *path, struct fuse_file_info *fi) {
-            cout << "Releasing file: " << path << " with file handle: " << fi->fh << endl;
+            cout << "Releasing file: " << path << endl;
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
@@ -125,7 +125,7 @@ class FuseGrpcClient {
                 context.set_deadline(deadline);
 
                 // Prepare the request
-                request.set_filedescriptor(fi->fh);
+                request.set_path(path);
 
                 // Make the gRPC call
                 Status status;
@@ -201,7 +201,7 @@ class FuseGrpcClient {
 
                 if (status.ok()) {
                     if (response.success()) {
-                        fi->fh = response.filedescriptor();
+                        fi->fh = -1;
                         return 0; // File opened successfully
                     } else {
                         cerr << "gRPC NfsOpen failed: " << response.message() << endl;
@@ -260,10 +260,11 @@ class FuseGrpcClient {
                 context.set_deadline(deadline);
 
                 // Prepare the request
-                request.set_filedescriptor(fi->fh);
+                request.set_path(path);
                 request.set_content(buf);
                 request.set_size(size);
                 request.set_offset(offset);
+                request.set_flags(fi->flags);
 
                 // Make the gRPC call
                 Status status;
@@ -418,6 +419,7 @@ class FuseGrpcClient {
             int retry_count = 0;  // Initialize retry count
             int backoff_time = 1; // Initial backoff time in seconds
 
+
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
                 ClientContext context;
@@ -429,8 +431,9 @@ class FuseGrpcClient {
                 context.set_deadline(deadline);
 
                 // Prepare the request
-                request.set_filedescriptor(fi->fh);
+                request.set_path(path);
                 request.set_offset(offset);
+                request.set_flags(fi->flags);
                 request.set_size(size);
 
                 // Make the gRPC call
@@ -710,7 +713,7 @@ class FuseGrpcClient {
                 if (status.ok()) {
                     if (response.success()) {
                         cout << "File created successfully: " << path << endl;
-                        fi->fh = response.filehandle();
+                        fi->fh = -1;
                         return 0; // File created successfully
                     } else {
                         cerr << "gRPC NfsCreate failed: " << response.message() << endl;
