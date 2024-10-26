@@ -171,6 +171,7 @@ double measureCreateLatency(const char* filePath, mode_t mode = 0644) {
     return latency.count();
 }
 
+// Large read and write are expected to use 1GB
 double measureLargeWriteLatency(const char* largeFilePath) {
     const size_t fileSize = 1 * 1024 * 1024 * 1024; // 1 GB
     //const size_t fileSize = 1 * 1024 * 1024; // 1 MB
@@ -321,16 +322,25 @@ int main() {
         std::cout << "Rmdir latency: " << rmdirLatency << " ms" << std::endl;
     }
 
+    const double fileSizeGB = 1.0;  // 1 GB file size
+    const double fileSizeMB = fileSizeGB * 1024.0; // Convert to MB if needed
+
     // Test Large Write
     double largeWriteLatency = measureLargeWriteLatency(testLargeFilePath);
     if (largeWriteLatency >= 0) {
         std::cout << "Large Write latency: " << largeWriteLatency << " ms" << std::endl;
+        double writeThroughputMBps = (fileSizeMB / largeWriteLatency) * 1000.0;
+        double writeThroughputGBps = (fileSizeGB / largeWriteLatency) * 1000.0;
+        std::cout << "Large Write throughput: " << writeThroughputMBps << " MB/s (" << writeThroughputGBps << " GB/s)" << std::endl;
     }   
 
     // Test Large Read
     double largeReadLatency = measureLargeReadLatency(testLargeFilePath);
     if (largeReadLatency >= 0) {
         std::cout << "Large Read latency: " << largeReadLatency << " ms" << std::endl;
+        double readThroughputMBps = (fileSizeMB / largeReadLatency) * 1000.0;
+        double readThroughputGBps = (fileSizeGB / largeReadLatency) * 1000.0;
+        std::cout << "Large read throughput: " << readThroughputMBps << " MB/s (" << readThroughputGBps << " GB/s)" << std::endl;
     }
 
     return 0;
