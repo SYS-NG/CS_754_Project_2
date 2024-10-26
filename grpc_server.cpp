@@ -138,6 +138,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             struct stat st;
             if (fstat(file_descriptor, &st) != 0) { // Get file info using fstat
                 cerr << "Failed to get file status for descriptor: " << file_descriptor << endl; // Debug log
+                close(file_descriptor);
                 response->set_success(false);
                 response->set_errorcode(errno);
                 response->set_message("File status retrieval failed");
@@ -147,6 +148,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             int fileSize = st.st_size;
 
             if (offset >= fileSize) {
+                close(file_descriptor);
                 response->set_success(false);
                 response->set_errorcode(0); // No data to read
                 response->set_message("Offset is beyond the file size");
@@ -161,6 +163,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             
             if (bytes_read < 0) {
                 cerr << "Failed to read file descriptor: " << file_descriptor << endl; // Debug log
+                close(file_descriptor);
                 response->set_success(false);
                 response->set_message("File Read Failed");
                 response->set_errorcode(errno);
@@ -177,15 +180,13 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             // Close the file descriptor
             cout << "NfsRelease called with file descriptor: " << file_descriptor << endl; // Debug log
 
-            if (close(file_descriptor) == 0) {
-                cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
-                response->set_success(true);
-                response->set_message("File released successfully");
-            } else {
-                cerr << "Failed to close file descriptor: " << file_descriptor << endl;
+            if (close(file_descriptor) != 0) {
+                cerr << "Failed to close file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl;
                 response->set_success(false);
                 response->set_errorcode(errno);
-                response->set_message("File release failed");
+                response->set_message("File close failed");
+            } else {
+                cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
             }
 
             return Status::OK;
@@ -382,6 +383,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
                 if (lseek(file_descriptor, cmd.offset, SEEK_SET) == (off_t)-1) {
                     cerr << "Failed to seek to offset: " << cmd.offset << " for file descriptor: " << file_descriptor << endl;
+                    close(file_descriptor);
                     response->set_success(false);
                     response->set_errorcode(errno);
                     response->set_message("File seek failed");
@@ -392,6 +394,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 if (bytes_written < 0) {
                     cerr << "Failed to write to file descriptor: " << file_descriptor 
                          << ", error: " << strerror(errno) << endl;
+                    close(file_descriptor);
                     response->set_success(false);
                     response->set_errorcode(errno);
                     response->set_message("File write failed");
@@ -572,15 +575,13 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_success(true);
             response->set_message("File created successfully");
 
-            if (close(file_descriptor) == 0) {
-                cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
-                response->set_success(true);
-                response->set_message("File released successfully");
-            } else {
-                cerr << "Failed to close file descriptor: " << file_descriptor << endl;
+            if (close(file_descriptor) != 0) {
+                cerr << "Failed to close file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl;
                 response->set_success(false);
                 response->set_errorcode(errno);
-                response->set_message("File release failed");
+                response->set_message("File close failed");
+            } else {
+                cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
             }
 
             return Status::OK;
