@@ -357,7 +357,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                     //      << " with command: offset = " << command.offset 
                     //      << ", size = " << command.size << endl;
 
-                    if (command.offset <= current_command.offset + current_command.size) {
+                    if (command.offset < current_command.offset + current_command.size) {
                         // cout << "Commands overlap. Merging commands." << endl;
                         current_command = mergeContent(current_command, command);
                     } else {

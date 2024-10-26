@@ -179,6 +179,18 @@ double measureLargeWriteLatency(const char* largeFilePath) {
 
     close(fd);
     auto end = std::chrono::high_resolution_clock::now();
+
+    struct stat fileStat;
+    if (stat(largeFilePath, &fileStat) == 0) {
+        if (fileStat.st_size == fileSize) {
+            std::cout << "File size verified: " << fileStat.st_size << " bytes." << std::endl;
+        } else {
+            std::cerr << "File size mismatch: expected " << fileSize << " bytes, but got " << fileStat.st_size << " bytes." << std::endl;
+        }
+    } else {
+        std::cerr << "Failed to get file status for: " << largeFilePath << std::endl;
+    }
+    
     std::chrono::duration<double, std::milli> latency = end - start;
     std::cout << "Successfully created 1GB file: " << largeFilePath << std::endl;
     return latency.count();

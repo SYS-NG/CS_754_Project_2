@@ -63,7 +63,7 @@ class FuseGrpcClient {
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
-            int backoff_time = 1; // Initial backoff time in seconds
+            int backoff_time = 10; // Initial backoff time in seconds
 
             while (retry_count < max_retries) {
                 // Create gRPC client context and request/response objects
@@ -183,7 +183,7 @@ class FuseGrpcClient {
                 NfsReleaseResponse response;
 
                 // Set timeout for the request
-                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                auto deadline = chrono::system_clock::now() + chrono::seconds(10);
                 context.set_deadline(deadline);
 
                 // Prepare the request
@@ -441,7 +441,7 @@ class FuseGrpcClient {
                 NfsReadResponse response;
 
                 // Set timeout for the request (e.g., 1 second)
-                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                auto deadline = chrono::system_clock::now() + chrono::seconds(10);
                 context.set_deadline(deadline);
 
                 // Prepare the request
