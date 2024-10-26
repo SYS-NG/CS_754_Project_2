@@ -269,6 +269,56 @@ double measureLargeReadLatency(const char* largeFilePath) {
     return latency.count();
 }
 
+// Function to test recovery after crash with parameterized write counts
+double testRecoveryAfterCrash(const char* filePath, int preCrashWrites, int postCrashWrites) {
+    const char data = 'a';  // 1 byte of data to write
+    int fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        std::cerr << "Failed to open file for writing: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    // Perform writes before the simulated crash
+    for (int i = 0; i < preCrashWrites; ++i) {
+        if (write(fd, &data, 1) == -1) {
+            std::cerr << "Write operation " << (i + 1) << " before crash failed." << std::endl;
+            close(fd);
+            return -1.0;
+        }
+    }
+
+    // Pause and wait for user input to simulate server recovery
+    std::cout << "Pause for server recovery. Press Enter to continue..." << std::endl;
+    std::cin.get();
+
+    // Perform writes after the simulated crash
+    for (int i = 0; i < postCrashWrites; ++i) {
+        if (write(fd, &data, 1) == -1) {
+            std::cerr << "Write operation " << (i + 1) << " after crash failed." << std::endl;
+            close(fd);
+            return -1.0;
+        }
+    }
+
+    // Measure close operation latency
+    auto start = std::chrono::high_resolution_clock::now();
+    if (close(fd) == -1) {
+        std::cerr << "Close operation failed." << std::endl;
+        return -1.0;
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> latency = end - start;
+
+    // Delete the file
+    if (unlink(filePath) == -1) {
+        std::cerr << "Failed to delete file: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    // Return close operation latency in milliseconds
+    return latency.count();
+}
+
 int changeMode(int fd, int mode) {
     if (ioctl(fd, SET_RUN_SYNC, reinterpret_cast<void*>(mode)) == -1) { 
         perror("ioctl");
@@ -283,12 +333,7 @@ int main() {
     const char* testExistFilePath = "./mnt/1255";
     const char* testFilePath = "./mnt/testdir/testfile";
     const char* testLargeFilePath = "./mnt/test_1GB_file";
-
-    // Test getattr
-    double getattrLatency = measureGetattrLatency(testFilePath);
-    if (getattrLatency >= 0) {
-        std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
-    }
+    const char* testFilePath2 = "./mnt/testfile2";
 
     // Test mkdir
     double mkdirLatency = measureMkdirLatency(testDirPath);
@@ -300,6 +345,12 @@ int main() {
     double createLatency = measureCreateLatency(testFilePath);
     if (createLatency >= 0) {
         std::cout << "Create latency: " << createLatency << " ms" << std::endl;
+    }
+
+    // Test getattr
+    double getattrLatency = measureGetattrLatency(testFilePath);
+    if (getattrLatency >= 0) {
+        std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
     }
 
     // Test open
@@ -396,6 +447,13 @@ int main() {
     }
     
     close(fd);
+
+    double closeLatency = testRecoveryAfterCrash(testFilePath2, 2, 2);
+    if (closeLatency >= 0) {
+        std::cout << "Commit latency after recovery: " << closeLatency << " ms" << std::endl;
+    } else {
+        std::cerr << "Test failed." << std::endl;
+    }
 
     return 0;
 }

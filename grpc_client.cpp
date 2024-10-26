@@ -155,11 +155,8 @@ class FuseGrpcClient {
 
             // Make the gRPC call
             Status status;
-            if (RUN_SYNC) {
-                status = instance_->stub_->NfsWrite(&context, request, &response);
-            } else {
-                status = instance_->stub_->NfsWriteAsync(&context, request, &response);
-            }
+            
+            status = instance_->stub_->NfsWriteAsync(&context, request, &response);
 
             if (status.ok() && response.success()) {
                 // Update the write_verifier with the new one from the server
@@ -543,56 +540,90 @@ class FuseGrpcClient {
                 Status status;
                 if (RUN_SYNC) {
                     status = instance_->stub_->NfsWrite(&context, request, &response);
-                } else {
-                    status = instance_->stub_->NfsWriteAsync(&context, request, &response);
-                }
-
-                if (status.ok()) {
-                    if (response.success()) {
-                        int64_t len = response.bytes_written();
-                        std::string write_verifier = response.write_verifier();
-
-                        // Store the write command and write_verifier
-                        WriteCommand command;
-                        command.path = path;
-                        command.content = std::string(buf, size);
-                        command.size = size;
-                        command.offset = offset;
-                        command.write_verifier = write_verifier;
-
-                        instance_->write_commands_[path].push_back(command);
-
-                        instance_->write_verifiers_[path].insert(write_verifier);
-
-                        return len; // Operation successful, return bytes written
+                    if (status.ok()) {
+                        if (response.success()) {
+                            int64_t len = response.bytes_written();
+                            return len; // Operation successful, return bytes written
+                        } else {
+                            cerr << "gRPC NfsWrite failed: " << response.message() << endl;
+                            return -response.errorcode(); // Map the errno from server to FUSE error code
+                        }
                     } else {
-                        cerr << "gRPC NfsWrite failed: " << response.message() << endl;
-                        return -response.errorcode(); // Map the errno from server to FUSE error code
+                        cerr << "nfs_write gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                        // Retry on timeout or transient error
+                        if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                            status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                            retry_count++;
+                            cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                            // Wait for a backoff period before retrying
+                            this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                            // Increase backoff time for the next retry
+                            backoff_time *= 2;
+
+                            // Reconnect if UNAVAILABLE
+                            // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                            //     cout << "Re-establishing gRPC connection..." << endl;
+                            //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                            //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                            // }
+                        } else {
+                            // Other errors, don't retry
+                            return -EIO;
+                        }
                     }
                 } else {
-                    cerr << "nfs_write gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+                    status = instance_->stub_->NfsWriteAsync(&context, request, &response);
 
-                    // Retry on timeout or transient error
-                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
-                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                        retry_count++;
-                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+                    if (status.ok()) {
+                        if (response.success()) {
+                            int64_t len = response.bytes_written();
+                            std::string write_verifier = response.write_verifier();
 
-                        // Wait for a backoff period before retrying
-                        this_thread::sleep_for(chrono::seconds(backoff_time));
+                            // Store the write command and write_verifier
+                            WriteCommand command;
+                            command.path = path;
+                            command.content = std::string(buf, size);
+                            command.size = size;
+                            command.offset = offset;
+                            command.write_verifier = write_verifier;
 
-                        // Increase backoff time for the next retry
-                        backoff_time *= 2;
+                            instance_->write_commands_[path].push_back(command);
 
-                        // Reconnect if UNAVAILABLE
-                        // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                        //     cout << "Re-establishing gRPC connection..." << endl;
-                        //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
-                        //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
-                        // }
+                            instance_->write_verifiers_[path].insert(write_verifier);
+
+                            return len; // Operation successful, return bytes written
+                        } else {
+                            cerr << "gRPC NfsWrite failed: " << response.message() << endl;
+                            return -response.errorcode(); // Map the errno from server to FUSE error code
+                        }
                     } else {
-                        // Other errors, don't retry
-                        return -EIO;
+                        cerr << "nfs_write gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                        // Retry on timeout or transient error
+                        if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                            status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                            retry_count++;
+                            cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                            // Wait for a backoff period before retrying
+                            this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                            // Increase backoff time for the next retry
+                            backoff_time *= 2;
+
+                            // Reconnect if UNAVAILABLE
+                            // if (status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                            //     cout << "Re-establishing gRPC connection..." << endl;
+                            //     instance_->channel_ = grpc::CreateChannel(instance_->target_, grpc::InsecureChannelCredentials());
+                            //     instance_->stub_ = GrpcService::NewStub(instance_->channel_);
+                            // }
+                        } else {
+                            // Other errors, don't retry
+                            return -EIO;
+                        }
                     }
                 }
             }
