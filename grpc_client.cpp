@@ -8,6 +8,7 @@
 #include <fuse3/fuse.h>
 #include "grpc_service.grpc.pb.h"
 #include <thread>
+#include <sys/ioctl.h>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -15,7 +16,9 @@ using grpc::Status;
 using namespace grpc_service;
 using namespace std;
 
-#define RUN_SYNC false
+#define SET_RUN_SYNC _IO('f', 2)
+
+bool RUN_SYNC = false;
 
 struct WriteCommand {
     std::string path;
@@ -55,6 +58,16 @@ class FuseGrpcClient {
             } else {
                 cerr << "Ping failed: " << status.error_code() << " - " << status.error_message() << endl;
             }
+        }
+
+        static int my_ioctl(const char *path, int cmd, void *arg, struct fuse_file_info *fi, unsigned int flags, void *data) {
+            if (cmd == SET_RUN_SYNC) {
+                RUN_SYNC = (reinterpret_cast<intptr_t>(arg) != 0);
+                std::cout << "RUN_SYNC set to: " << RUN_SYNC << std::endl;
+                return 0;
+            }
+            std::cout << "Undefined ioctl command: " << cmd << std::endl;
+            return -ENOSYS;  // Undefined ioctl command
         }
 
         static int nfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
@@ -489,6 +502,7 @@ class FuseGrpcClient {
                 std::cerr << "[ERROR] Max retries reached. Failed to release file: " << path << std::endl;
                 return -EIO; // Return error after maximum retries
             } else {
+                cout << "Flushing nothing" << endl;
                 return 0;
             }
         }
@@ -1079,6 +1093,7 @@ class FuseGrpcClient {
                 .readdir = nfs_readdir,
                 .create  = nfs_create,
                 .utimens = nfs_utimens,
+                .ioctl = my_ioctl,
             };
 
             fuse_main(argc, argv, &nfs_oper, NULL);
