@@ -340,7 +340,7 @@ class FuseGrpcClient {
             // cout << "First 5 characters: " << string(buf, std::min(size, (size_t)5)) << endl; // Output the first 5 characters
             // int non_null_count = std::count_if(buf, buf + size, [](char c) { return c != '\0'; }); // Count non-null characters
             // cout << "Number of non-null characters: " << non_null_count << endl; // Output the count of non-null characters
-            cout << size << endl;
+            // cout << size << endl;
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
