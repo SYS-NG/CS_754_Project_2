@@ -85,6 +85,32 @@ double measureOpenLatency(const char* filePath) {
     return latency.count();
 }
 
+// Measure Latency of `write` operation
+double measureWriteLatency(const char* filePath, size_t bufferSize) {
+    char buffer[bufferSize];
+    std::fill_n(buffer, bufferSize, 'A'); // Fill the buffer with the character 'A'
+
+    int fd = open(filePath, O_WRONLY);
+    if (fd == -1) {
+        std::cerr << "Failed to open file: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    ssize_t bytesRead = write(fd, buffer, bufferSize);
+    close(fd);
+    
+    auto end = std::chrono::high_resolution_clock::now();
+
+    if (bytesRead < 0) {
+        return -1.0;
+    }
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+    return latency.count();
+}
+
 // Measure latency of `read` operation
 double measureReadLatency(const char* filePath, size_t bufferSize) {
     char buffer[bufferSize];
@@ -239,7 +265,7 @@ int main() {
     const char* testLargeFilePath = "./mnt/test_1GB_file";
 
     // Test getattr
-    double getattrLatency = measureGetattrLatency(testExistFilePath);
+    double getattrLatency = measureGetattrLatency(testFilePath);
     if (getattrLatency >= 0) {
         std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
     }
@@ -262,9 +288,17 @@ int main() {
         std::cout << "Open latency: " << openLatency << " ms" << std::endl;
     }
 
-    // Test read
+    
     size_t bufferSize = 4096;
-    double readLatency = measureReadLatency(testExistFilePath, bufferSize);
+    // The order of create, write, and read matters
+    // Test write
+    double writeLatency = measureWriteLatency(testFilePath, bufferSize);
+    if (writeLatency >= 0) {
+        std::cout << "Write latency: " << writeLatency << " ms" << std::endl;
+    }
+
+    // Test read
+    double readLatency = measureReadLatency(testFilePath, bufferSize);
     if (readLatency >= 0) {
         std::cout << "Read latency: " << readLatency << " ms" << std::endl;
     }
