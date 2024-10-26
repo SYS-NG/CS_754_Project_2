@@ -50,8 +50,8 @@ add_executable(grpc_client
     ${GENERATED_PROTO_SOURCES}
 )
 
-add_executable(fuse_client 
-    fuse_client.cpp
+add_executable(nfs_eval 
+    nfs_eval.cpp
 )
 
 # Include generated files
@@ -60,7 +60,7 @@ target_include_directories(grpc_server PRIVATE ${GENERATED_PROTOBUF_PATH})
 target_include_directories(grpc_client PRIVATE ${GENERATED_PROTOBUF_PATH})
 target_include_directories(grpc_client PRIVATE ${FUSE_INCLUDE_DIR})
 
-target_include_directories(fuse_client PRIVATE ${FUSE_INCLUDE_DIR})
+target_include_directories(nfs_eval PRIVATE ${FUSE_INCLUDE_DIR})
 
 # Link against gRPC and Protobuf libraries
 target_link_libraries(grpc_server
@@ -74,6 +74,6 @@ target_link_libraries(grpc_client
     PRIVATE ${FUSE_LIBRARY}
 )
 
-target_link_libraries(fuse_client
+target_link_libraries(nfs_eval
     PRIVATE ${FUSE_LIBRARY}
 )

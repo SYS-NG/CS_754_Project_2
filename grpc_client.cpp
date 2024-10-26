@@ -335,8 +335,12 @@ class FuseGrpcClient {
     
         // Write should return exactly the number of bytes requested except on error
         static int nfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-            cout << "Write to file: " << path << endl;
-            cout << "Buffer content to write: " << string(buf, size) << endl; // Log the buffer content
+            // cout << "Write to file: " << path << endl;
+            // cout << "Buffer content to write: " << string(buf, size) << endl; // Log the buffer content
+            // cout << "First 5 characters: " << string(buf, std::min(size, (size_t)5)) << endl; // Output the first 5 characters
+            // int non_null_count = std::count_if(buf, buf + size, [](char c) { return c != '\0'; }); // Count non-null characters
+            // cout << "Number of non-null characters: " << non_null_count << endl; // Output the count of non-null characters
+            cout << size << endl;
 
             int max_retries = 3;  // Set the maximum number of retries
             int retry_count = 0;  // Initialize retry count
@@ -349,7 +353,7 @@ class FuseGrpcClient {
                 NfsWriteResponse response;
 
                 // Set timeout for the request (e.g., 1 second)
-                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                auto deadline = chrono::system_clock::now() + chrono::seconds(30);
                 context.set_deadline(deadline);
 
                 // Prepare the request
@@ -357,6 +361,8 @@ class FuseGrpcClient {
                 request.set_content(buf);
                 request.set_size(size);
                 request.set_offset(offset);
+
+                // cout << "Making gRPC write request to path: " << path << " with size: " << size << " at offset: " << offset << endl;
 
                 // Make the gRPC call
                 Status status;
@@ -382,7 +388,7 @@ class FuseGrpcClient {
                         instance_->write_commands_.push_back(command);
 
                         instance_->write_verifiers_.insert(write_verifier);
-
+                        // cout << len << endl;
                         return len; // Operation successful, return bytes written
                     } else {
                         cerr << "gRPC NfsWrite failed: " << response.message() << endl;
@@ -453,8 +459,8 @@ class FuseGrpcClient {
 
                         if (len <= size) {
                             size = len;
-                            cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
-                            cout << "Content: " << response.content() << endl; // Log the content read
+                            // cout << "Read " << len << " bytes from file: " << path << endl; // Log the length of content read
+                            // cout << "Content: " << response.content() << endl; // Log the content read
                             memcpy(buf, response.content().data(), size);
                             return size; // Successfully read bytes
                         } else {

@@ -171,7 +171,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_success(true);
             response->set_message("File Read successfully");
             response->set_content(std::string(buffer.data(), bytes_read));
-            cout << "File content: " << response->content() << endl;
+            // cout << "File content: " << response->content() << endl;
 
 
             // Close the file descriptor
@@ -228,8 +228,8 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
         WriteCommand mergeContent(const WriteCommand& a, const WriteCommand& b) {
             // Log the input arguments
-            cout << "Merging WriteCommands: a.offset = " << a.offset << ", a.size = " << a.size << ", a.content = " << a.content << endl;
-            cout << "b.offset = " << b.offset << ", b.size = " << b.size << ", b.content = " << b.content << endl;
+            // cout << "Merging WriteCommands: a.offset = " << a.offset << ", a.size = " << a.size << ", a.content = " << a.content << endl;
+            // cout << "b.offset = " << b.offset << ", b.size = " << b.size << ", b.content = " << b.content << endl;
 
             // Check if the commands overlap or are continuous
             if (b.offset > a.offset + a.size) {
@@ -247,9 +247,9 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             size_t overlap_start = b.offset - a.offset; // Calculate the start of the overlap in the first command
             merged_command.content.replace(overlap_start, b.size, b.content); // Replace the overlapping part
 
-            cout << "Final merged command: offset = " << merged_command.offset 
-                 << ", size = " << merged_command.size 
-                 << ", content = " << merged_command.content << endl;
+            // cout << "Final merged command: offset = " << merged_command.offset 
+            //      << ", size = " << merged_command.size 
+            //      << ", content = " << merged_command.content << endl;
 
             return merged_command;
         }
@@ -343,24 +343,24 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             WriteCommand current_command = {0, 0, ""}; // Initialize with default values
 
             for (const auto& command : write_commands) {
-                cout << "Processing command: offset = " << command.offset 
-                     << ", size = " << command.size 
-                     << ", content = " << command.content << endl;
+                // cout << "Processing command: offset = " << command.offset 
+                //      << ", size = " << command.size 
+                //      << ", content = " << command.content << endl;
 
                 if (current_command.size == 0) {
                     cout << "Initializing current_command with the first command." << endl;
                     current_command = command;
                 } else {
-                    cout << "Comparing current_command: offset = " << current_command.offset 
-                         << ", size = " << current_command.size 
-                         << " with command: offset = " << command.offset 
-                         << ", size = " << command.size << endl;
+                    // cout << "Comparing current_command: offset = " << current_command.offset 
+                    //      << ", size = " << current_command.size 
+                    //      << " with command: offset = " << command.offset 
+                    //      << ", size = " << command.size << endl;
 
                     if (command.offset <= current_command.offset + current_command.size) {
-                        cout << "Commands overlap. Merging commands." << endl;
+                        // cout << "Commands overlap. Merging commands." << endl;
                         current_command = mergeContent(current_command, command);
                     } else {
-                        cout << "No overlap detected. Finalizing current command." << endl;
+                        // cout << "No overlap detected. Finalizing current command." << endl;
                         final_write_commands.push_back(current_command);
                         current_command = command; // Start a new command
                     }
@@ -375,10 +375,10 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             // Write the final commands to the file descriptor
             for (const auto& cmd : final_write_commands) {
-                cout << "Writing to file descriptor " << file_descriptor 
-                     << " at offset " << cmd.offset 
-                     << " with size " << cmd.size 
-                     << " and content: " << cmd.content << endl;
+                // cout << "Writing to file descriptor " << file_descriptor 
+                //      << " at offset " << cmd.offset 
+                //      << " with size " << cmd.size 
+                //      << " and content: " << cmd.content << endl;
 
                 if (lseek(file_descriptor, cmd.offset, SEEK_SET) == (off_t)-1) {
                     cerr << "Failed to seek to offset: " << cmd.offset << " for file descriptor: " << file_descriptor << endl;
@@ -387,8 +387,8 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                     response->set_message("File seek failed");
                     return Status::OK;
                 }
-
                 ssize_t bytes_written = write(file_descriptor, cmd.content.data(), cmd.size);
+                cout << "Bytes Written to File: " << bytes_written << endl;
                 if (bytes_written < 0) {
                     cerr << "Failed to write to file descriptor: " << file_descriptor 
                          << ", error: " << strerror(errno) << endl;
@@ -486,8 +486,8 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             int64_t offset = request->offset();
             int32_t size = request->size();
 
-            cout << "NfsWriteAsync invoked with fh: " << path 
-                 << ", data size: " << size << ", and offset: " << offset << endl; // Debug log
+            // cout << "NfsWriteAsync invoked with fh: " << path 
+            //      << ", data size: " << size << ", and offset: " << offset << endl; // Debug log
         
             WriteCommand command;
             command.offset = offset;
@@ -499,6 +499,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             response->set_success(true);
             response->set_message("Data buffered successfully");
+            // cout << size << endl;
             response->set_bytes_written(size); // Return the number of bytes intended to be written
             response->set_write_verifier(write_verifier_); // Return the current write verifier
             return Status::OK;
