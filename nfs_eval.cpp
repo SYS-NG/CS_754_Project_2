@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <sys/ioctl.h>
+
+#define SET_RUN_SYNC _IO('f', 2)
 
 using namespace std;
 
@@ -253,11 +256,27 @@ double measureLargeReadLatency(const char* largeFilePath) {
 
     close(fd);
     auto end = std::chrono::high_resolution_clock::now();
+
+    int result = unlink(largeFilePath);
+
+    if (result != 0) {
+        std::cerr << "Failed to unlink file: " << largeFilePath << std::endl;
+        return -1.0;
+    }
+
     std::chrono::duration<double, std::milli> latency = end - start;
     std::cout << "Successfully read 1GB file: " << largeFilePath << " total bytes read: " << totalRead << std::endl;
     return latency.count();
 }
 
+int changeMode(int fd, int mode) {
+    if (ioctl(fd, SET_RUN_SYNC, reinterpret_cast<void*>(mode)) == -1) { 
+        perror("ioctl");
+        close(fd);
+        return -1;
+    }
+    return 0;
+}
 
 int main() {
     const char* testDirPath = "./mnt/testdir";
@@ -342,6 +361,41 @@ int main() {
         double readThroughputGBps = (fileSizeGB / largeReadLatency) * 1000.0;
         std::cout << "Large read throughput: " << readThroughputMBps << " MB/s (" << readThroughputGBps << " GB/s)" << std::endl;
     }
+
+    // Test change mode
+    int fd = open(testExistFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        std::cerr << "Failed to create file: " << testExistFilePath << std::endl;
+        return -1;
+    }
+    
+    if (changeMode(fd, 1) == -1) {
+        return -1;
+    }
+    
+    close(fd);
+
+    // Test sync write latency
+    double largeSyncWriteLatency = measureLargeWriteLatency(testLargeFilePath);
+    if (largeSyncWriteLatency >= 0) {
+        std::cout << "Large Sync Write latency: " << largeSyncWriteLatency << " ms" << std::endl;
+        double writeThroughputMBps = (fileSizeMB / largeSyncWriteLatency) * 1000.0;
+        double writeThroughputGBps = (fileSizeGB / largeSyncWriteLatency) * 1000.0;
+        std::cout << "Large Sync Write throughput: " << writeThroughputMBps << " MB/s (" << writeThroughputGBps << " GB/s)" << std::endl;
+    }
+
+    //change mode back
+    fd = open(testExistFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        std::cerr << "Failed to create file: " << testExistFilePath << std::endl;
+        return -1;
+    }
+
+    if (changeMode(fd, 0) == -1) {
+        return -1;
+    }
+    
+    close(fd);
 
     return 0;
 }
