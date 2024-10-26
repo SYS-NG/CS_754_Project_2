@@ -8,8 +8,6 @@
 #include <fuse3/fuse.h>
 #include "grpc_service.grpc.pb.h"
 #include <thread>
-#include <cstring>
-#include <sys/ioctl.h>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -18,7 +16,6 @@ using namespace grpc_service;
 using namespace std;
 
 #define RUN_SYNC false
-#define MY_COMMIT_CMD _IO('f', 1)
 
 struct WriteCommand {
     std::string path;
@@ -58,101 +55,6 @@ class FuseGrpcClient {
             } else {
                 cerr << "Ping failed: " << status.error_code() << " - " << status.error_message() << endl;
             }
-        }
-
-        static int my_ioctl(const char *path, int cmd, void *arg, struct fuse_file_info *fi, unsigned int flags, void *data) {
-            if (cmd == MY_COMMIT_CMD) {
-                std::cout << "[INFO] Received commit command for file: " << path << std::endl;
-                
-                int max_retries = 3;        // Maximum number of retries
-                int retry_count = 0;        // Current retry count
-                int backoff_time = 5;       // Initial backoff time in seconds
-
-                while (retry_count < max_retries) {
-                    std::cout << "[INFO] Preparing NfsReleaseRequest for path: " << path << std::endl;
-                    
-                    // Create NfsReleaseRequest
-                    NfsCommitRequest request;
-                    request.set_path(path);
-                    request.set_flags(O_WRONLY);
-                    
-                    for (const auto& ver : instance_->write_verifiers_[path]) {
-                        std::cout << "[DEBUG] Adding write_verifier: " << ver << std::endl;
-                        request.add_write_verifiers(ver);
-                    }
-
-                    // Configure gRPC client context and response
-                    ClientContext context;
-                    NfsCommitResponse response;
-                    auto deadline = chrono::system_clock::now() + chrono::seconds(10);
-                    context.set_deadline(deadline);
-
-                    // Make the gRPC call
-                    Status status;
-
-                    std::cout << "[INFO] Asynchronous gRPC call to NfsCommit" << std::endl;
-                    status = instance_->stub_->NfsCommit(&context, request, &response);
-
-                    if (status.ok()) {
-                        if (response.success()) {
-                            std::cout << "[INFO] File released successfully on server for path: " << path << std::endl;
-                            instance_->write_commands_.erase(path);
-                            instance_->write_verifiers_.erase(path);
-                            return 0; // Operation successful
-                        } else {
-                            std::cerr << "[ERROR] gRPC NfsRelease failed with message: " << response.message() << std::endl;
-                            
-                            if (response.current_write_verifier() != "-1") {
-                                std::cout << "[WARNING] Write verifier mismatch detected. Resending missing write commands." << std::endl;
-                                
-                                std::string valid_write_verifier = response.current_write_verifier();
-                                for (auto& cmd : instance_->write_commands_[path]) {
-                                    if (cmd.write_verifier != valid_write_verifier) {
-                                        std::cerr << "[INFO] Resending write command with invalid verifier for path: " << cmd.path << std::endl;
-                                        int resend_status = instance_->resend_write_command(cmd);
-                                        if (resend_status < 0) {
-                                            std::cerr << "[ERROR] Failed to resend write command for path: " << cmd.path << std::endl;
-                                        }
-                                    }
-                                }
-
-                                // Update the write_verifiers set
-                                instance_->write_verifiers_[path].clear();
-                                for (const auto& cmd : instance_->write_commands_[path]) {
-                                    instance_->write_verifiers_[path].insert(cmd.write_verifier);
-                                }
-
-                                // Retry release
-                                retry_count++;
-                                continue;
-                            } else {
-                                std::cerr << "[ERROR] NfsRelease failed with error code: " << response.errorcode() << std::endl;
-                                return -response.errorcode();
-                            }
-                        }
-                    } else {
-                        std::cerr << "[ERROR] gRPC communication error: " << status.error_code() << " - " << status.error_message() << std::endl;
-                        
-                        if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
-                            status.error_code() == grpc::StatusCode::UNAVAILABLE) {
-                            retry_count++;
-                            std::cout << "[INFO] Retrying " << retry_count << "/" << max_retries 
-                                    << " after " << backoff_time << " seconds due to transient error." << std::endl;
-
-                            // Wait for the backoff period before retrying
-                            std::this_thread::sleep_for(chrono::seconds(backoff_time));
-                            backoff_time *= 2;  // Increase backoff time for the next retry
-                        } else {
-                            std::cerr << "[ERROR] Non-retriable gRPC error. Terminating operation with -EIO." << std::endl;
-                            return -EIO;
-                        }
-                    }
-                }
-
-                std::cerr << "[ERROR] Max retries reached. Failed to release file: " << path << std::endl;
-                return -EIO; // Return error after maximum retries
-            }
-            return -ENOSYS;  // Undefined ioctl command
         }
 
         static int nfs_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
@@ -321,7 +223,7 @@ class FuseGrpcClient {
             cerr << "Failed to release file after " << max_retries << " retries." << endl;
             return -EIO; // Input/output error for failed retries
         }
-
+        
         // static int nfs_release_async(const char *path, struct fuse_file_info *fi) {
         //     cout << "Releasing file: " << path << endl;
 
@@ -494,6 +396,102 @@ class FuseGrpcClient {
             cerr << "Failed to open file after " << max_retries << " retries." << endl;
             return -EIO; // Input/output error for failed retries
         }
+
+        static int nfs_flush(const char *path, struct fuse_file_info *fi) {
+            if (!RUN_SYNC) {
+                std::cout << "[INFO] Received commit command for file: " << path << std::endl;
+                
+                int max_retries = 3;        // Maximum number of retries
+                int retry_count = 0;        // Current retry count
+                int backoff_time = 5;       // Initial backoff time in seconds
+
+                while (retry_count < max_retries) {
+                    std::cout << "[INFO] Preparing NfsCommitRequest for path: " << path << std::endl;
+                    
+                    // Create NfsCommitRequest
+                    NfsCommitRequest request;
+                    request.set_path(path);
+                    request.set_flags(O_WRONLY);
+                    
+                    for (const auto& ver : instance_->write_verifiers_[path]) {
+                        std::cout << "[DEBUG] Adding write_verifier: " << ver << std::endl;
+                        request.add_write_verifiers(ver);
+                    }
+
+                    // Configure gRPC client context and response
+                    ClientContext context;
+                    NfsCommitResponse response;
+                    auto deadline = chrono::system_clock::now() + chrono::seconds(10);
+                    context.set_deadline(deadline);
+
+                    // Make the gRPC call
+                    Status status;
+
+                    std::cout << "[INFO] Asynchronous gRPC call to NfsCommit" << std::endl;
+                    status = instance_->stub_->NfsCommit(&context, request, &response);
+
+                    if (status.ok()) {
+                        if (response.success()) {
+                            std::cout << "[INFO] File released successfully on server for path: " << path << std::endl;
+                            instance_->write_commands_.erase(path);
+                            instance_->write_verifiers_.erase(path);
+                            return 0; // Operation successful
+                        } else {
+                            std::cerr << "[ERROR] gRPC NfsCommit failed with message: " << response.message() << std::endl;
+                            
+                            if (response.current_write_verifier() != "-1") {
+                                std::cout << "[WARNING] Write verifier mismatch detected. Resending missing write commands." << std::endl;
+                                
+                                std::string valid_write_verifier = response.current_write_verifier();
+                                for (auto& cmd : instance_->write_commands_[path]) {
+                                    if (cmd.write_verifier != valid_write_verifier) {
+                                        std::cerr << "[INFO] Resending write command with invalid verifier for path: " << cmd.path << std::endl;
+                                        int resend_status = instance_->resend_write_command(cmd);
+                                        if (resend_status < 0) {
+                                            std::cerr << "[ERROR] Failed to resend write command for path: " << cmd.path << std::endl;
+                                        }
+                                    }
+                                }
+
+                                // Update the write_verifiers set
+                                instance_->write_verifiers_[path].clear();
+                                for (const auto& cmd : instance_->write_commands_[path]) {
+                                    instance_->write_verifiers_[path].insert(cmd.write_verifier);
+                                }
+
+                                // Retry Commit
+                                retry_count++;
+                                continue;
+                            } else {
+                                std::cerr << "[ERROR] NfsCommit failed with error code: " << response.errorcode() << std::endl;
+                                return -response.errorcode();
+                            }
+                        }
+                    } else {
+                        std::cerr << "[ERROR] gRPC communication error: " << status.error_code() << " - " << status.error_message() << std::endl;
+                        
+                        if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                            status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                            retry_count++;
+                            std::cout << "[INFO] Retrying " << retry_count << "/" << max_retries 
+                                    << " after " << backoff_time << " seconds due to transient error." << std::endl;
+
+                            // Wait for the backoff period before retrying
+                            std::this_thread::sleep_for(chrono::seconds(backoff_time));
+                            backoff_time *= 2;  // Increase backoff time for the next retry
+                        } else {
+                            std::cerr << "[ERROR] Non-retriable gRPC error. Terminating operation with -EIO." << std::endl;
+                            return -EIO;
+                        }
+                    }
+                }
+
+                std::cerr << "[ERROR] Max retries reached. Failed to release file: " << path << std::endl;
+                return -EIO; // Return error after maximum retries
+            } else {
+                return 0;
+            }
+        }
     
         // Write should return exactly the number of bytes requested except on error
         static int nfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
@@ -523,6 +521,7 @@ class FuseGrpcClient {
                 request.set_content(buf);
                 request.set_size(size);
                 request.set_offset(offset);
+                request.set_flags(fi->flags);
 
                 // cout << "Making gRPC write request to path: " << path << " with size: " << size << " at offset: " << offset << endl;
 
@@ -1075,11 +1074,11 @@ class FuseGrpcClient {
                 .open    = nfs_open,
                 .read    = nfs_read,
                 .write   = nfs_write,
+                .flush   = nfs_flush,
                 .release = nfs_release,
                 .readdir = nfs_readdir,
                 .create  = nfs_create,
                 .utimens = nfs_utimens,
-                .ioctl = my_ioctl,
             };
 
             fuse_main(argc, argv, &nfs_oper, NULL);

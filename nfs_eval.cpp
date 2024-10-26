@@ -4,10 +4,6 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
-#include <thread>
-#include <sys/ioctl.h>
-
-#define MY_COMMIT_CMD _IO('f', 1)
 
 using namespace std;
 
@@ -181,16 +177,7 @@ double measureLargeWriteLatency(const char* largeFilePath) {
         // std::cout << "Written " << totalWritten << " bytes to " << largeFilePath << std::endl;
     }
 
-    int result = ioctl(fd, MY_COMMIT_CMD);
-    if (result == 0) {
-        std::cout << "Commit successful!" << std::endl;
-    } else {
-        std::cerr << "Commit failed!" << std::endl;
-    }
-
     close(fd);
-
-    // std::this_thread::sleep_for(std::chrono::seconds(5));
     auto end = std::chrono::high_resolution_clock::now();
 
     struct stat fileStat;
@@ -304,7 +291,7 @@ int main() {
     double largeWriteLatency = measureLargeWriteLatency(testLargeFilePath);
     if (largeWriteLatency >= 0) {
         std::cout << "Large Write latency: " << largeWriteLatency << " ms" << std::endl;
-    }
+    }   
 
     // Test Large Read
     double largeReadLatency = measureLargeReadLatency(testLargeFilePath);

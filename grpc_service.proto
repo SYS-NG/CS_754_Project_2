@@ -9,7 +9,7 @@ service GrpcService {
   rpc NfsRead (NfsReadRequest) returns (NfsReadResponse) {} 
   rpc NfsOpen (NfsOpenRequest) returns (NfsOpenResponse) {} 
   rpc NfsRelease (NfsReleaseRequest) returns (NfsReleaseResponse) {}
-  rpc NfsReleaseAsync (NfsReleaseRequest) returns (NfsReleaseResponse) {}
+  // rpc NfsReleaseAsync (NfsReleaseRequest) returns (NfsReleaseResponse) {}
   rpc NfsCommit (NfsCommitRequest) returns (NfsCommitResponse) {}
   rpc NfsWrite (NfsWriteRequest) returns (NfsWriteResponse) {}
   rpc NfsWriteAsync (NfsWriteRequest) returns (NfsWriteResponse) {}
@@ -111,6 +111,22 @@ message NfsReleaseResponse {
   int32 errorcode = 3; // System error number if operation failed
 }
 
+// //======================================================================
+// // New messages for NfsRelease
+// message NfsReleaseRequest {
+//   // int64 filedescriptor = 3; // File handle returned upon successful open
+//   string path = 4; // Path of the file to open
+//   int64  flags = 5;
+//   repeated string write_verifiers = 2;
+// }
+
+// message NfsReleaseResponse {
+//   bool success = 1; // Indicates if the operation was successful
+//   string message = 2; // Message for additional information
+//   int32 errorcode = 3; // System error number if operation failed
+//   string current_write_verifier = 4; // The server's current valid write_verifier
+// }
+
 //======================================================================
 // New messages for Commit
 message NfsCommitRequest {
@@ -133,6 +149,7 @@ message NfsWriteRequest {
   string content = 2; // Content to write to the file
   int64 size = 3; // Size of the content being written
   int64 offset = 4; // Offset for the file to write to
+  int64  flags = 5;
 }
 
 message NfsWriteResponse {

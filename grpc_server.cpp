@@ -273,8 +273,8 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             if(request->write_verifiers().empty()) {
                 response->set_success(true);
-                response->set_message("File released successfully");
-                cout<< "File released no write verifiers found" << endl;
+                response->set_message("File Commit successfully");
+                cout<< "File Committed no write verifiers found" << endl;
                 return Status::OK;
             }
 
@@ -394,7 +394,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                     return Status::OK;
                 }
                 ssize_t bytes_written = write(file_descriptor, cmd.content.data(), cmd.size);
-                cout << "Bytes Written to File: " << bytes_written << endl;
+                // cout << "Bytes Written to File: " << bytes_written << endl;
                 if (bytes_written < 0) {
                     cerr << "Failed to write to file descriptor: " << file_descriptor 
                          << ", error: " << strerror(errno) << endl;
@@ -413,12 +413,12 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (close(file_descriptor) == 0) {
                 cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
                 response->set_success(true);
-                response->set_message("File released successfully");
+                response->set_message("File committed successfully");
             } else {
                 cerr << "Failed to close file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl;
                 response->set_success(false);
                 response->set_errorcode(errno);
-                response->set_message("File release failed");
+                response->set_message("File closed failed");
             }
 
             return Status::OK;
@@ -473,35 +473,62 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const grpc_service::NfsWriteRequest* request,
             grpc_service::NfsWriteResponse* response
         ) override {
-            // int file_descriptor = request->filedescriptor();
-            // const std::string content = request->content();
-            // int64_t size = request->size();
-            // off_t offset = request->offset(); 
+            const std::string path  = request->path();
+            const int64_t     flags = request->flags(); 
+            const std::string content = request->content();
+            int64_t size = request->size();
+            off_t offset = request->offset(); 
+
+            // cout << "NfsOpen called with path: " << path << endl; // Debug log
+
+            // Open the file and get the file descriptor
+            int file_descriptor = open((directory_path_ + path).c_str(), flags);
+            if (file_descriptor < 0) {
+                cout << "File not found: " << path << endl; // Debug log
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("File not found");
+                return Status::OK;
+            }
+
+            // If the file exists, we can open it successfully
+            // cout << "File opened successfully: " << path << endl; // Debug log
 
             // cout << "NfsWrite invoked with file descriptor: " << file_descriptor << ", content size: " << size << ", and offset: " << offset << endl; // Debug log
             // cout << "Writing content: " << content << " to file descriptor: " << file_descriptor << " at offset: " << offset << endl; // Log the content being written
-            // if (lseek(file_descriptor, offset, SEEK_SET) == (off_t)-1) {
-            //     cerr << "Failed to seek to offset: " << offset << " in file descriptor: " << file_descriptor << endl;
-            //     response->set_success(false);
-            //     response->set_errorcode(errno);
-            //     response->set_message("File seek failed");
-            //     return Status::OK;
-            // }
+            if (lseek(file_descriptor, offset, SEEK_SET) == (off_t)-1) {
+                cerr << "Failed to seek to offset: " << offset << " in file descriptor: " << file_descriptor << endl;
+                close(file_descriptor);
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("File seek failed");
+                return Status::OK;
+            }
 
-            // // Write the content to the file
-            // ssize_t bytes_written = write(file_descriptor, content.c_str(), size);
-            // if (bytes_written < 0) {
-            //     cerr << "Failed to write to file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl; // Debug log with error message
-            //     response->set_success(false);
-            //     response->set_errorcode(errno);
-            //     response->set_message("File write failed");
-            //     return Status::OK;
-            // }
+            // Write the content to the file
+            ssize_t bytes_written = write(file_descriptor, content.c_str(), size);
+            if (bytes_written < 0) {
+                cerr << "Failed to write to file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl; // Debug log with error message
+                close(file_descriptor);
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("File write failed");
+                return Status::OK;
+            }
 
             // cout << "Successfully wrote " << bytes_written << " bytes to file descriptor: " << file_descriptor << endl; // Debug log
-            // response->set_success(true);
-            // response->set_message("File written successfully");
-            // response->set_bytes_written(bytes_written); // Return the number of bytes written
+            // close file
+            if (close(file_descriptor) != 0) {
+                cerr << "Failed to close file: " << path << ", error: " << strerror(errno) << endl; // Debug log with error message
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("File close failed");
+                return Status::OK;
+            }
+
+            response->set_success(true);
+            response->set_message("File written successfully");
+            response->set_bytes_written(bytes_written);
             return Status::OK;
         }
 
