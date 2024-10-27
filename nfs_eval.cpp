@@ -10,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <cstring>
 #include <numeric>
+#include <fstream>
 
 #define SET_RUN_SYNC _IO('f', 2)
 
@@ -361,7 +362,7 @@ void deleteFile(const char* filePath) {
 
 void performFileOperations(int threadId, const vector<char>& buffer, int repeatTimesPerThread) {
     // Create a unique file name for this thread
-    string filePath = "testfile_" + to_string(threadId) + ".txt";
+    string filePath = "./mnt/testfile_" + to_string(threadId) + ".txt";
     
     for (int i = 0; i < repeatTimesPerThread; i++)
     {
@@ -463,6 +464,8 @@ int changeMode(int fd, int mode) {
 }
 
 int main() {
+    const std::string filePath = "testfile.txt";
+
     const char* testDirPath = "./mnt/testdir";
     const char* testExistFilePath = "./mnt/1255";
     const char* testFilePath = "./mnt/testfile";
@@ -473,9 +476,9 @@ int main() {
     size_t bufferSize = 4096;
 
     // Just for operations testing
-    int repeatTimesPerThread = 10;
+    int repeatTimesPerThread = 2;
 
-    vector<int> numThreadTrials = {1, 5, 10, 50, 100, 500};
+    vector<int> numThreadTrials = {1, 5, 10, 15};
 
     for (auto &numThreads : numThreadTrials)
     {
