@@ -404,7 +404,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                     response->set_message("File write failed");
                     return Status::OK;
                 }
-                cout << "Successfully wrote " << bytes_written << " bytes." << endl;
+                // cout << "Successfully wrote " << bytes_written << " bytes." << endl;
             }
 
             cout << "Clearing the file descriptor map." << endl;

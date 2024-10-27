@@ -7,6 +7,9 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <sys/ioctl.h>
+
+#define SET_RUN_SYNC _IO('f', 2)
 
 using namespace std;
 
@@ -256,6 +259,14 @@ double measureLargeReadLatency(const char* largeFilePath) {
 
     close(fd);
     auto end = std::chrono::high_resolution_clock::now();
+
+    int result = unlink(largeFilePath);
+
+    if (result != 0) {
+        std::cerr << "Failed to unlink file: " << largeFilePath << std::endl;
+        return -1.0;
+    }
+
     std::chrono::duration<double, std::milli> latency = end - start;
     std::cout << "Successfully read 1GB file: " << largeFilePath << " total bytes read: " << totalRead << std::endl;
     return latency.count();
@@ -318,18 +329,71 @@ double measureConcurrentReads(const char* filePath, size_t bufferSize, int numTh
     return averageLatency;
 }
 
+// Function to test recovery after crash with parameterized write counts
+double testRecoveryAfterCrash(const char* filePath, int preCrashWrites, int postCrashWrites) {
+    const char data = 'a';  // 1 byte of data to write
+    int fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        std::cerr << "Failed to open file for writing: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    // Perform writes before the simulated crash
+    for (int i = 0; i < preCrashWrites; ++i) {
+        if (write(fd, &data, 1) == -1) {
+            std::cerr << "Write operation " << (i + 1) << " before crash failed." << std::endl;
+            close(fd);
+            return -1.0;
+        }
+    }
+
+    // Pause and wait for user input to simulate server recovery
+    std::cout << "Pause for server recovery. Press Enter to continue..." << std::endl;
+    std::cin.get();
+
+    // Perform writes after the simulated crash
+    for (int i = 0; i < postCrashWrites; ++i) {
+        if (write(fd, &data, 1) == -1) {
+            std::cerr << "Write operation " << (i + 1) << " after crash failed." << std::endl;
+            close(fd);
+            return -1.0;
+        }
+    }
+
+    // Measure close operation latency
+    auto start = std::chrono::high_resolution_clock::now();
+    if (close(fd) == -1) {
+        std::cerr << "Close operation failed." << std::endl;
+        return -1.0;
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> latency = end - start;
+
+    // Delete the file
+    if (unlink(filePath) == -1) {
+        std::cerr << "Failed to delete file: " << filePath << std::endl;
+        return -1.0;
+    }
+
+    // Return close operation latency in milliseconds
+    return latency.count();
+}
+
+int changeMode(int fd, int mode) {
+    if (ioctl(fd, SET_RUN_SYNC, reinterpret_cast<void*>(mode)) == -1) { 
+        perror("ioctl");
+        close(fd);
+        return -1;
+    }
+    return 0;
+}
 
 int main() {
     const char* testDirPath = "./mnt/testdir";
     const char* testExistFilePath = "./mnt/1255";
     const char* testFilePath = "./mnt/testfile";
     const char* testLargeFilePath = "./mnt/test_1GB_file";
-
-    // Test getattr
-    double getattrLatency = measureGetattrLatency(testFilePath);
-    if (getattrLatency >= 0) {
-        std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
-    }
+    const char* testFilePath2 = "./mnt/testfile2";
 
     // Test mkdir
     double mkdirLatency = measureMkdirLatency(testDirPath);
@@ -341,6 +405,12 @@ int main() {
     double createLatency = measureCreateLatency(testFilePath);
     if (createLatency >= 0) {
         std::cout << "Create latency: " << createLatency << " ms" << std::endl;
+    }
+
+    // Test getattr
+    double getattrLatency = measureGetattrLatency(testFilePath);
+    if (getattrLatency >= 0) {
+        std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
     }
 
     // Test open
@@ -407,6 +477,48 @@ int main() {
         double readThroughputMBps = (fileSizeMB / largeReadLatency) * 1000.0;
         double readThroughputGBps = (fileSizeGB / largeReadLatency) * 1000.0;
         std::cout << "Large read throughput: " << readThroughputMBps << " MB/s (" << readThroughputGBps << " GB/s)" << std::endl;
+    }
+
+    // Test change mode
+    int fd = open(testExistFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        std::cerr << "Failed to create file: " << testExistFilePath << std::endl;
+        return -1;
+    }
+    
+    if (changeMode(fd, 1) == -1) {
+        return -1;
+    }
+    
+    close(fd);
+
+    // Test sync write latency
+    double largeSyncWriteLatency = measureLargeWriteLatency(testLargeFilePath);
+    if (largeSyncWriteLatency >= 0) {
+        std::cout << "Large Sync Write latency: " << largeSyncWriteLatency << " ms" << std::endl;
+        double writeThroughputMBps = (fileSizeMB / largeSyncWriteLatency) * 1000.0;
+        double writeThroughputGBps = (fileSizeGB / largeSyncWriteLatency) * 1000.0;
+        std::cout << "Large Sync Write throughput: " << writeThroughputMBps << " MB/s (" << writeThroughputGBps << " GB/s)" << std::endl;
+    }
+
+    //change mode back
+    fd = open(testExistFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        std::cerr << "Failed to create file: " << testExistFilePath << std::endl;
+        return -1;
+    }
+
+    if (changeMode(fd, 0) == -1) {
+        return -1;
+    }
+    
+    close(fd);
+
+    double closeLatency = testRecoveryAfterCrash(testFilePath2, 2, 2);
+    if (closeLatency >= 0) {
+        std::cout << "Commit latency after recovery: " << closeLatency << " ms" << std::endl;
+    } else {
+        std::cerr << "Test failed." << std::endl;
     }
 
     return 0;
