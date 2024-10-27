@@ -34,8 +34,8 @@ class FuseGrpcClient {
         std::vector<WriteCommand> write_cache_;
         unique_ptr<GrpcService::Stub> stub_;
         static FuseGrpcClient* instance_;
-        std::map<std::string, std::vector<WriteCommand>> write_commands_;
-        std::map<std::string, std::set<std::string>> write_verifiers_;
+        std::unordered_map<std::string, std::vector<WriteCommand>> write_commands_;
+        std::unordered_map<std::string, std::unordered_set<std::string>> write_verifiers_;
         // string target_;
 
     public:
@@ -582,13 +582,17 @@ class FuseGrpcClient {
                             int64_t len = response.bytes_written();
                             std::string write_verifier = response.write_verifier();
 
-                            // Store the write command and write_verifier
+                            Store the write command and write_verifier
                             WriteCommand command;
                             command.path = path;
                             command.content = std::string(buf, size);
                             command.size = size;
                             command.offset = offset;
                             command.write_verifier = write_verifier;
+
+                            if (instance_->write_commands_[path].empty()){
+                                instance_->write_commands_[path].reserve(1500);
+                            }
 
                             instance_->write_commands_[path].push_back(command);
 

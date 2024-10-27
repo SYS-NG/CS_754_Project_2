@@ -551,6 +551,10 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             command.content = data;
 
             // Store the write command in the file handle map
+            if (file_handle_map_[path].empty()){
+                file_handle_map_[path].reserve(1500);
+            }
+
             file_handle_map_[path].push_back(command);
 
             response->set_success(true);
