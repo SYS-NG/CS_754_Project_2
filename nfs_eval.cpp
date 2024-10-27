@@ -183,8 +183,9 @@ double measureCreateLatency(const char* filePath, mode_t mode = 0644) {
 // Large read and write are expected to use 1GB
 double measureLargeWriteLatency(const char* largeFilePath) {
     const size_t fileSize = 1 * 1024 * 1024 * 1024; // 1 GB
-    //const size_t fileSize = 1 * 1024 * 1024; // 1 MB
+    // const size_t fileSize = 1 * 1024 * 1024; // 1 MB
     const size_t bufferSize = 1 * 1024 * 1024; // 1 MB buffer
+    // const size_t bufferSize = 4 * 1024;
     char buffer[bufferSize];
     std::fill_n(buffer, bufferSize, 'A'); // Fill the buffer with the character 'A'
 
@@ -212,6 +213,10 @@ double measureLargeWriteLatency(const char* largeFilePath) {
         totalWritten += bytesWritten;
         // std::cout << "Written " << totalWritten << " bytes to " << largeFilePath << std::endl;
     }
+
+    auto end1 = std::chrono::high_resolution_clock::now();
+
+    cout <<"time taken to write 1GB file: " << std::chrono::duration<double, std::milli>(end1 - start).count() << " ms" << endl;
 
     close(fd);
     auto end = std::chrono::high_resolution_clock::now();
@@ -454,6 +459,46 @@ double testRecoveryAfterCrash(const char* filePath, int preCrashWrites, int post
     return latency.count();
 }
 
+void deleteFileBeforeOpen(const char* filePath) {
+
+    const size_t bufferSize = 1024;  // Buffer size for reading
+    char buffer[bufferSize];
+    
+    // First open operation
+    int fd = open(filePath, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        std::cerr << "Failed to open file: " << filePath << std::endl;
+        return;
+    }
+    std::cout << "File opened successfully. Pausing... Press Enter to continue." << std::endl;
+
+    // Pause and wait for user input to continue
+    std::cin.get();
+
+    ssize_t bytesRead = read(fd, buffer, bufferSize);
+    if (bytesRead == -1) {
+        close(fd);
+        std::cerr << "Failed to read from file." << std::endl;
+    } else {
+        std::cout << "Read " << bytesRead << " bytes from file: ";
+        std::cout.write(buffer, bytesRead);
+        std::cout << std::endl;
+    }
+
+    close(fd);
+
+    // // Re-open the file after pause
+    // fd = open(filePath, O_WRONLY);
+    // if (fd == -1) {
+    //     std::cerr << "Failed to re-open file: " << filePath << std::endl;
+    //     return;
+    // }
+    // std::cout << "File re-opened successfully. Continuing execution..." << std::endl;
+
+    // // Close the second open operation
+    // close(fd);
+}
+
 int changeMode(int fd, int mode) {
     if (ioctl(fd, SET_RUN_SYNC, reinterpret_cast<void*>(mode)) == -1) { 
         perror("ioctl");
@@ -470,7 +515,6 @@ int main() {
     const char* testExistFilePath = "./mnt/1255";
     const char* testFilePath = "./mnt/testfile";
     const char* testLargeFilePath = "./mnt/test_1GB_file";
-    const char* testFilePath2 = "./mnt/testfile2";
 
     // Used for a lot of tests
     size_t bufferSize = 4096;
@@ -602,12 +646,14 @@ int main() {
     
     close(fd);
 
-    double closeLatency = testRecoveryAfterCrash(testFilePath2, 2, 2);
+    double closeLatency = testRecoveryAfterCrash(testFilePath, 2, 2);
     if (closeLatency >= 0) {
         std::cout << "Commit latency after recovery: " << closeLatency << " ms" << std::endl;
     } else {
         std::cerr << "Test failed." << std::endl;
     }
+
+    deleteFileBeforeOpen(testFilePath);
 
     return 0;
 }
