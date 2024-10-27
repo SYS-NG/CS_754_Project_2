@@ -254,6 +254,62 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             return merged_command;
         }
+        
+        vector<WriteCommand> sortAndCombineWriteCommands(vector<WriteCommand> write_commands) {
+            // Need to push to disk
+            // First sort the WriteCommands under the file descriptor by offset
+            // Then start merging the Write Commands when possible
+            // if nextOffset < currentOffset + currentSize
+            // then it can be merged
+            // currentSize = nextOffset + nextSize - currentOffset
+            // content that overlaps should be overwritten by the new content
+            // 
+            // else: this overlap is done, and is one writeCommand, add to a final write command vector
+            // on to the next commands
+            //
+            // At the end using the final write command vector, write to the file descriptor
+    
+            cout << "Sorting " << write_commands.size() << " write commands by offset." << endl;
+            std::sort(write_commands.begin(), write_commands.end(), [](const WriteCommand& a, const WriteCommand& b) {
+                return a.offset < b.offset; // Sort by offset
+            });
+
+            std::vector<WriteCommand> final_write_commands;
+            WriteCommand current_command = {0, 0, ""}; // Initialize with default values
+
+            for (const auto& command : write_commands) {
+                // cout << "Processing command: offset = " << command.offset 
+                //      << ", size = " << command.size 
+                //      << ", content = " << command.content << endl;
+
+                if (current_command.size == 0) {
+                    cout << "Initializing current_command with the first command." << endl;
+                    current_command = command;
+                } else {
+                    // cout << "Comparing current_command: offset = " << current_command.offset 
+                    //      << ", size = " << current_command.size 
+                    //      << " with command: offset = " << command.offset 
+                    //      << ", size = " << command.size << endl;
+
+                    if (command.offset < current_command.offset + current_command.size) {
+                        // cout << "Commands overlap. Merging commands." << endl;
+                        current_command = mergeContent(current_command, command);
+                    } else {
+                        // cout << "No overlap detected. Finalizing current command." << endl;
+                        final_write_commands.push_back(current_command);
+                        current_command = command; // Start a new command
+                    }
+                }
+            }
+
+            // Add the last command if it exists
+            if (current_command.size > 0) {
+                cout << "Adding the last command to final write commands." << endl;
+                final_write_commands.push_back(current_command);
+            }
+
+            return final_write_commands;
+        }
 
         Status NfsCommit(
             ServerContext* context,
@@ -263,11 +319,10 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const std::string path  = request->path();
             const int64_t     flags = request->flags();
             const std::string& valid_write_verifier = write_verifier_;
-            cout << "NfsCommit called with file handle: " << path << endl;
 
-            cout << "Retrieving write commands for file handle: " << path << endl;
+            //cout << "Retrieving write commands for file handle: " << path << endl;
             std::vector<WriteCommand> write_commands = file_handle_map_[path];
-            cout << "Number of write commands retrieved: " << write_commands.size() << endl;
+            //cout << "Number of write commands retrieved: " << write_commands.size() << endl;
 
             response->set_current_write_verifier("-1");
 
@@ -324,59 +379,9 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 return Status::OK;
             }
             // cout << "File opened successfully: " << "fd: "<< file_descriptor << "with: " << path << endl; // Debug log
-            
-            
-            // Need to push to disk
-            // First sort the WriteCommands under the file descriptor by offset
-            // Then start merging the Write Commands when possible
-            // if nextOffset < currentOffset + currentSize
-            // then it can be merged
-            // currentSize = nextOffset + nextSize - currentOffset
-            // content that overlaps should be overwritten by the new content
-            // 
-            // else: this overlap is done, and is one writeCommand, add to a final write command vector
-            // on to the next commands
-            //
-            // At the end using the final write command vector, write to the file descriptor
 
-            cout << "Sorting write commands by offset." << endl;
-            std::sort(write_commands.begin(), write_commands.end(), [](const WriteCommand& a, const WriteCommand& b) {
-                return a.offset < b.offset; // Sort by offset
-            });
-
-            std::vector<WriteCommand> final_write_commands;
-            WriteCommand current_command = {0, 0, ""}; // Initialize with default values
-
-            for (const auto& command : write_commands) {
-                // cout << "Processing command: offset = " << command.offset 
-                //      << ", size = " << command.size 
-                //      << ", content = " << command.content << endl;
-
-                if (current_command.size == 0) {
-                    cout << "Initializing current_command with the first command." << endl;
-                    current_command = command;
-                } else {
-                    // cout << "Comparing current_command: offset = " << current_command.offset 
-                    //      << ", size = " << current_command.size 
-                    //      << " with command: offset = " << command.offset 
-                    //      << ", size = " << command.size << endl;
-
-                    if (command.offset < current_command.offset + current_command.size) {
-                        // cout << "Commands overlap. Merging commands." << endl;
-                        current_command = mergeContent(current_command, command);
-                    } else {
-                        // cout << "No overlap detected. Finalizing current command." << endl;
-                        final_write_commands.push_back(current_command);
-                        current_command = command; // Start a new command
-                    }
-                }
-            }
-
-            // Add the last command if it exists
-            if (current_command.size > 0) {
-                cout << "Adding the last command to final write commands." << endl;
-                final_write_commands.push_back(current_command);
-            }
+            vector<WriteCommand> final_write_commands = sortAndCombineWriteCommands(write_commands);
+            // vector<WriteCommand> final_write_commands = write_commands;
 
             // Write the final commands to the file descriptor
             for (const auto& cmd : final_write_commands) {
@@ -549,7 +554,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             command.offset = offset;
             command.size = size;
             command.content = data;
-
+            
             // Store the write command in the file handle map
             if (file_handle_map_[path].empty()){
                 file_handle_map_[path].reserve(1500);
