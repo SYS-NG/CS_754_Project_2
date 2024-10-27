@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <vector>
+#include <thread>
+#include <mutex>
 
 using namespace std;
 
@@ -258,11 +261,68 @@ double measureLargeReadLatency(const char* largeFilePath) {
     return latency.count();
 }
 
+vector<double> latencies; // Vector to store latencies
+mutex latencyMutex; // Mutex for protecting access to latencies
+
+void readFile(const char* filePath, size_t bufferSize, int threadId) {
+    char buffer[bufferSize];
+    int fd = open(filePath, O_RDONLY);
+    if (fd == -1) {
+        std::cerr << "Failed to open file: " << filePath << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(latencyMutex);
+            latencies[threadId] = -1.0;
+        }
+        return;
+    }
+
+    auto start = chrono::high_resolution_clock::now();
+    ssize_t bytesRead = read(fd, buffer, bufferSize);
+    auto end = chrono::high_resolution_clock::now();
+
+    close(fd);
+
+    std::chrono::duration<double, std::milli> latency = end - start;
+
+    {
+        std::lock_guard<std::mutex> lock(latencyMutex);
+        latencies[threadId] = latency.count();
+    }
+    
+    return;
+}
+
+double measureConcurrentReads(const char* filePath, size_t bufferSize, int numThreads) {
+    vector<thread> threads;
+    latencies.resize(numThreads);
+
+    for (int threadId = 0; threadId < numThreads; threadId++) {
+        threads.emplace_back(readFile, filePath, bufferSize, threadId); // Pass client ID to the thread function
+    }
+
+    // Wait for all threads to finish
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    // Output the latencies for each thread
+    cout << "\nLatencies for each client:" << endl;
+    
+    double sum = 0;
+    for (const auto& latencyMeasure : latencies) {
+        sum += latencyMeasure;
+        cout << latencyMeasure << endl;
+    }
+    double averageLatency = sum / latencies.size(); 
+
+    return averageLatency;
+}
+
 
 int main() {
     const char* testDirPath = "./mnt/testdir";
     const char* testExistFilePath = "./mnt/1255";
-    const char* testFilePath = "./mnt/testdir/testfile";
+    const char* testFilePath = "./mnt/testfile";
     const char* testLargeFilePath = "./mnt/test_1GB_file";
 
     // Test getattr
@@ -302,6 +362,12 @@ int main() {
     double readLatency = measureReadLatency(testFilePath, bufferSize);
     if (readLatency >= 0) {
         std::cout << "Read latency: " << readLatency << " ms" << std::endl;
+    }
+    
+    // Test Concurrent Read
+    double averageConcurrentReadLatency = measureConcurrentReads(testFilePath, bufferSize, 10);
+    if (averageConcurrentReadLatency >= 0) {
+        std::cout << "Average Concurrent Read latency: " << averageConcurrentReadLatency << " ms" << std::endl;
     }
 
     // Test readdir
