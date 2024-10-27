@@ -43,7 +43,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             auto now = std::chrono::system_clock::now();
             auto now_c = std::chrono::system_clock::to_time_t(now);
             write_verifier_ = std::to_string(now_c);
-            cout << "Write verifier initialized: " << write_verifier_ << endl;
+            //cout << "Write verifier initialized: " << write_verifier_ << endl;
         }
 
         Status Ping(
@@ -97,7 +97,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 // DT_REG = regular file
                 // DT_DIR = directory
                 if (entry->d_type == DT_REG || entry->d_type == DT_DIR) {
-                    cout << entry->d_name << endl;
+                    //cout << entry->d_name << endl;
                     response->add_files(entry->d_name);
                 }
             }
@@ -114,12 +114,12 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             const std::string path  = request->path();
             const int64_t     flags = request->flags(); 
-            // cout << "READ: NfsOpen called with path: " << path << endl; // Debug log
+            // //cout << "READ: NfsOpen called with path: " << path << endl; // Debug log
 
             // Open the file and get the file descriptor
             int file_descriptor = open((directory_path_ + path).c_str(), flags);
             if (file_descriptor < 0) {
-                cout << "File not found: " << path << endl; // Debug log
+                //cout << "File not found: " << path << endl; // Debug log
                 response->set_success(false);
                 response->set_errorcode(errno);
                 response->set_message("File not found");
@@ -127,13 +127,13 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             }
 
             // If the file exists, we can open it successfully
-            // cout << "READ: File opened successfully: " << path << endl; // Debug log
+            // //cout << "READ: File opened successfully: " << path << endl; // Debug log
 
             // int file_descriptor = request->filedescriptor(); // Get the file descriptor from the request
             off_t offset = request->offset();
             off_t size   = request->size();
 
-            // cout << "READ: NfsRead called with file descriptor: " << file_descriptor << endl; // Debug log
+            // //cout << "READ: NfsRead called with file descriptor: " << file_descriptor << endl; // Debug log
             
             struct stat st;
             if (fstat(file_descriptor, &st) != 0) { // Get file info using fstat
@@ -174,11 +174,11 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             response->set_success(true);
             response->set_message("File Read successfully");
             response->set_content(std::string(buffer.data(), bytes_read));
-            // cout << "File content: " << response->content() << endl;
+            // //cout << "File content: " << response->content() << endl;
 
 
             // Close the file descriptor
-            // cout << "READ: NfsRelease called with file descriptor: " << file_descriptor << endl; // Debug log
+            // //cout << "READ: NfsRelease called with file descriptor: " << file_descriptor << endl; // Debug log
 
             if (close(file_descriptor) != 0) {
                 cerr << "Failed to close file descriptor: " << file_descriptor << ", error: " << strerror(errno) << endl;
@@ -186,7 +186,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 response->set_errorcode(errno);
                 response->set_message("File close failed");
             } else {
-                // cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
+                // //cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
             }
 
             return Status::OK;
@@ -199,7 +199,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
         ) override {
             const std::string path  = request->path();
             const int64_t     flags = request->flags(); 
-            cout << "NfsOpen called with path: " << path << endl; // Debug log
+            //cout << "NfsOpen called with path: " << path << endl; // Debug log
 
             // check permissions
             int access_mode = 0;
@@ -214,14 +214,14 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             }
 
             if (access((directory_path_ + path).c_str(), access_mode) != 0) {
-                cout << "Permission denied or file not found: " << path << endl; // Debug log
+                //cout << "Permission denied or file not found: " << path << endl; // Debug log
                 response->set_success(false);
                 response->set_errorcode(errno);
                 response->set_message("Permission denied or file not found");
                 return Status::OK;
             }
 
-            cout << "File access check passed for path: " << path << endl; // Debug log
+            //cout << "File access check passed for path: " << path << endl; // Debug log
             response->set_success(true);
             response->set_message("File access check passed");
             return Status::OK;
@@ -229,8 +229,8 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
         WriteCommand mergeContent(const WriteCommand& a, const WriteCommand& b) {
             // Log the input arguments
-            // cout << "Merging WriteCommands: a.offset = " << a.offset << ", a.size = " << a.size << ", a.content = " << a.content << endl;
-            // cout << "b.offset = " << b.offset << ", b.size = " << b.size << ", b.content = " << b.content << endl;
+            // //cout << "Merging WriteCommands: a.offset = " << a.offset << ", a.size = " << a.size << ", a.content = " << a.content << endl;
+            // //cout << "b.offset = " << b.offset << ", b.size = " << b.size << ", b.content = " << b.content << endl;
 
             // Check if the commands overlap or are continuous
             if (b.offset > a.offset + a.size) {
@@ -248,7 +248,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             size_t overlap_start = b.offset - a.offset; // Calculate the start of the overlap in the first command
             merged_command.content.replace(overlap_start, b.size, b.content); // Replace the overlapping part
 
-            // cout << "Final merged command: offset = " << merged_command.offset 
+            // //cout << "Final merged command: offset = " << merged_command.offset 
             //      << ", size = " << merged_command.size 
             //      << ", content = " << merged_command.content << endl;
 
@@ -269,7 +269,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             //
             // At the end using the final write command vector, write to the file descriptor
     
-            cout << "Sorting " << write_commands.size() << " write commands by offset." << endl;
+            //cout << "Sorting " << write_commands.size() << " write commands by offset." << endl;
             std::sort(write_commands.begin(), write_commands.end(), [](const WriteCommand& a, const WriteCommand& b) {
                 return a.offset < b.offset; // Sort by offset
             });
@@ -278,24 +278,24 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             WriteCommand current_command = {0, 0, ""}; // Initialize with default values
 
             for (const auto& command : write_commands) {
-                // cout << "Processing command: offset = " << command.offset 
+                // //cout << "Processing command: offset = " << command.offset 
                 //      << ", size = " << command.size 
                 //      << ", content = " << command.content << endl;
 
                 if (current_command.size == 0) {
-                    cout << "Initializing current_command with the first command." << endl;
+                    //cout << "Initializing current_command with the first command." << endl;
                     current_command = command;
                 } else {
-                    // cout << "Comparing current_command: offset = " << current_command.offset 
+                    // //cout << "Comparing current_command: offset = " << current_command.offset 
                     //      << ", size = " << current_command.size 
                     //      << " with command: offset = " << command.offset 
                     //      << ", size = " << command.size << endl;
 
                     if (command.offset < current_command.offset + current_command.size) {
-                        // cout << "Commands overlap. Merging commands." << endl;
+                        // //cout << "Commands overlap. Merging commands." << endl;
                         current_command = mergeContent(current_command, command);
                     } else {
-                        // cout << "No overlap detected. Finalizing current command." << endl;
+                        // //cout << "No overlap detected. Finalizing current command." << endl;
                         final_write_commands.push_back(current_command);
                         current_command = command; // Start a new command
                     }
@@ -304,7 +304,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             // Add the last command if it exists
             if (current_command.size > 0) {
-                cout << "Adding the last command to final write commands." << endl;
+                //cout << "Adding the last command to final write commands." << endl;
                 final_write_commands.push_back(current_command);
             }
 
@@ -320,23 +320,23 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const int64_t     flags = request->flags();
             const std::string& valid_write_verifier = write_verifier_;
 
-            //cout << "Retrieving write commands for file handle: " << path << endl;
+            ////cout << "Retrieving write commands for file handle: " << path << endl;
             std::vector<WriteCommand> write_commands = file_handle_map_[path];
-            //cout << "Number of write commands retrieved: " << write_commands.size() << endl;
+            ////cout << "Number of write commands retrieved: " << write_commands.size() << endl;
 
             response->set_current_write_verifier("-1");
 
             if(request->write_verifiers().empty()) {
                 response->set_success(true);
                 response->set_message("File Commit successfully");
-                cout<< "File Committed no write verifiers found" << endl;
+                //cout<< "File Committed no write verifiers found" << endl;
                 return Status::OK;
             }
 
             if (request->write_verifiers().size() == 1) {
-                cout << "Checking write verifier: " << request->write_verifiers(0) << endl;
+                //cout << "Checking write verifier: " << request->write_verifiers(0) << endl;
                 if (request->write_verifiers(0) != valid_write_verifier) {
-                    cout << "Invalid write_verifier detected" << endl;
+                    //cout << "Invalid write_verifier detected" << endl;
                     response->set_success(false);
                     response->set_message("Invalid write_verifier detected");
                     response->set_errorcode(EIO);
@@ -344,7 +344,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                     return Status::OK;
                 }
             } else {
-                cout << "Multiple write_verifiers detected, assuming a mismatch" << endl;
+                //cout << "Multiple write_verifiers detected, assuming a mismatch" << endl;
                 response->set_success(false);
                 response->set_message("Multiple write_verifiers detected, assuming a mismatch");
                 response->set_errorcode(EIO);
@@ -354,7 +354,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             // bool all_verifiers_match = true;
             // for (const auto& ver : request->write_verifiers()) {
-            //     cout << "Checking write verifier: " << ver << endl;
+            //     //cout << "Checking write verifier: " << ver << endl;
             //     if (ver != valid_write_verifier) {
             //         all_verifiers_match = false;
             //         break;
@@ -372,20 +372,20 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             // Open the file and get the file descriptor
             int file_descriptor = open((directory_path_ + path).c_str(), flags);
             if (file_descriptor < 0) {
-                cout << "File not found: " << path << endl; // Debug log
+                //cout << "File not found: " << path << endl; // Debug log
                 response->set_success(false);
                 response->set_errorcode(errno);
                 response->set_message("File not found");
                 return Status::OK;
             }
-            // cout << "File opened successfully: " << "fd: "<< file_descriptor << "with: " << path << endl; // Debug log
+            // //cout << "File opened successfully: " << "fd: "<< file_descriptor << "with: " << path << endl; // Debug log
 
             vector<WriteCommand> final_write_commands = sortAndCombineWriteCommands(write_commands);
             // vector<WriteCommand> final_write_commands = write_commands;
 
             // Write the final commands to the file descriptor
             for (const auto& cmd : final_write_commands) {
-                // cout << "Writing to file descriptor " << file_descriptor 
+                // //cout << "Writing to file descriptor " << file_descriptor 
                 //      << " at offset " << cmd.offset 
                 //      << " with size " << cmd.size 
                 //      << " and content: " << cmd.content << endl;
@@ -399,7 +399,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                     return Status::OK;
                 }
                 ssize_t bytes_written = write(file_descriptor, cmd.content.data(), cmd.size);
-                // cout << "Bytes Written to File: " << bytes_written << endl;
+                // //cout << "Bytes Written to File: " << bytes_written << endl;
                 if (bytes_written < 0) {
                     cerr << "Failed to write to file descriptor: " << file_descriptor 
                          << ", error: " << strerror(errno) << endl;
@@ -409,14 +409,14 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                     response->set_message("File write failed");
                     return Status::OK;
                 }
-                // cout << "Successfully wrote " << bytes_written << " bytes." << endl;
+                // //cout << "Successfully wrote " << bytes_written << " bytes." << endl;
             }
 
-            cout << "Clearing the file descriptor map." << endl;
+            //cout << "Clearing the file descriptor map." << endl;
             file_handle_map_.erase(path); // Clear the file descriptor map
 
             if (close(file_descriptor) == 0) {
-                cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
+                //cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
                 response->set_success(true);
                 response->set_message("File committed successfully");
             } else {
@@ -457,10 +457,10 @@ class grpcServices final : public grpc_service::GrpcService::Service {
         //     grpc_service::NfsReleaseResponse* response
         // ) override {
         //     // int file_descriptor = request->filedescriptor(); // Get the file descriptor from the request
-        //     // cout << "NfsRelease called with file descriptor: " << file_descriptor << endl; // Debug log
+        //     // //cout << "NfsRelease called with file descriptor: " << file_descriptor << endl; // Debug log
 
         //     // if (close(file_descriptor) == 0) {
-        //     //     cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
+        //     //     //cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
         //     //     response->set_success(true);
         //     //     response->set_message("File released successfully");
         //     // } else {
@@ -484,12 +484,12 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             int64_t size = request->size();
             off_t offset = request->offset(); 
 
-            // cout << "NfsOpen called with path: " << path << endl; // Debug log
+            // //cout << "NfsOpen called with path: " << path << endl; // Debug log
 
             // Open the file and get the file descriptor
             int file_descriptor = open((directory_path_ + path).c_str(), flags | O_DSYNC);
             if (file_descriptor < 0) {
-                cout << "File not found: " << path << endl; // Debug log
+                //cout << "File not found: " << path << endl; // Debug log
                 response->set_success(false);
                 response->set_errorcode(errno);
                 response->set_message("File not found");
@@ -497,10 +497,10 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             }
 
             // If the file exists, we can open it successfully
-            // cout << "File opened successfully: " << path << endl; // Debug log
+            // //cout << "File opened successfully: " << path << endl; // Debug log
 
-            // cout << "NfsWrite invoked with file descriptor: " << file_descriptor << ", content size: " << size << ", and offset: " << offset << endl; // Debug log
-            // cout << "Writing content: " << content << " to file descriptor: " << file_descriptor << " at offset: " << offset << endl; // Log the content being written
+            // //cout << "NfsWrite invoked with file descriptor: " << file_descriptor << ", content size: " << size << ", and offset: " << offset << endl; // Debug log
+            // //cout << "Writing content: " << content << " to file descriptor: " << file_descriptor << " at offset: " << offset << endl; // Log the content being written
             if (lseek(file_descriptor, offset, SEEK_SET) == (off_t)-1) {
                 cerr << "Failed to seek to offset: " << offset << " in file descriptor: " << file_descriptor << endl;
                 close(file_descriptor);
@@ -521,7 +521,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 return Status::OK;
             }
 
-            // cout << "Successfully wrote " << bytes_written << " bytes to file descriptor: " << file_descriptor << endl; // Debug log
+            // //cout << "Successfully wrote " << bytes_written << " bytes to file descriptor: " << file_descriptor << endl; // Debug log
             // close file
             if (close(file_descriptor) != 0) {
                 cerr << "Failed to close file: " << path << ", error: " << strerror(errno) << endl; // Debug log with error message
@@ -547,7 +547,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             int64_t offset = request->offset();
             int32_t size = request->size();
 
-            // cout << "NfsWriteAsync invoked with fh: " << path 
+            // //cout << "NfsWriteAsync invoked with fh: " << path 
             //      << ", data size: " << size << ", and offset: " << offset << endl; // Debug log
         
             WriteCommand command;
@@ -561,7 +561,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
 
             response->set_success(true);
             response->set_message("Data buffered successfully");
-            // cout << size << endl;
+            // //cout << size << endl;
             response->set_bytes_written(size); // Return the number of bytes intended to be written
             response->set_write_verifier(write_verifier_); // Return the current write verifier
             return Status::OK;
@@ -573,10 +573,10 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             grpc_service::NfsUnlinkResponse* response
         ) override {
             const std::string path = request->path();
-            cout << "NfsUnlink called with path: " << path << endl; // Debug log
+            //cout << "NfsUnlink called with path: " << path << endl; // Debug log
 
             if (unlink((directory_path_ + path).c_str()) == 0) {
-                cout << "File unlinked successfully: " << path << endl;
+                //cout << "File unlinked successfully: " << path << endl;
                 response->set_success(true);
                 response->set_message("File unlinked successfully");
             } else {
@@ -594,11 +594,11 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             grpc_service::NfsRmdirResponse* response
         ) override {
             const std::string path = request->path();
-            cout << "NfsRmdir called with path: " << path << endl; // Debug log
+            //cout << "NfsRmdir called with path: " << path << endl; // Debug log
 
             // Perform rmdir operation
             if (rmdir((directory_path_ + path).c_str()) == 0) {
-                cout << "Directory removed successfully: " << path << endl;
+                //cout << "Directory removed successfully: " << path << endl;
                 response->set_success(true);
                 response->set_message("Directory removed successfully");
             } else {
@@ -618,7 +618,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
         ) override {
             const std::string path = request->path();
             mode_t mode = request->mode();
-            cout << "NfsCreate called with path: " << path << " and mode: " << oct << mode << endl;
+            //cout << "NfsCreate called with path: " << path << " and mode: " << oct << mode << endl;
 
             // open the file and get the file descriptor
             int file_descriptor = open((directory_path_ + path).c_str(), O_CREAT | O_WRONLY, mode);
@@ -630,7 +630,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 return Status::OK;
             }
 
-            cout << "File created successfully: " << path << endl;
+            //cout << "File created successfully: " << path << endl;
             response->set_success(true);
             response->set_message("File created successfully");
 
@@ -640,7 +640,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
                 response->set_errorcode(errno);
                 response->set_message("File close failed");
             } else {
-                cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
+                //cout << "File descriptor " << file_descriptor << " closed successfully." << endl;
             }
 
             return Status::OK;
@@ -665,7 +665,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             if (utimensat(AT_FDCWD, (directory_path_ + path).c_str(), times, 0) == 0) {
                 response->set_success(true);
                 response->set_message("Timestamps updated successfully");
-                cout << "Timestamps for " << path << " updated successfully." << endl;
+                //cout << "Timestamps for " << path << " updated successfully." << endl;
             } else {
                 response->set_success(false);
                 response->set_errorcode(errno);
@@ -684,13 +684,13 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const std::string path = request->path();
             mode_t mode = request->mode();
 
-            cout << "NfsMkdir called with path: " << path << " and mode: " << mode << endl; // Debug log
+            //cout << "NfsMkdir called with path: " << path << " and mode: " << mode << endl; // Debug log
 
             // Create the directory using mkdir system call
             if (mkdir((directory_path_ + path).c_str(), mode) == 0) {
                 response->set_success(true);
                 response->set_message("Directory created successfully");
-                cout << "Directory created: " << path << endl;
+                //cout << "Directory created: " << path << endl;
             } else {
                 response->set_success(false);
                 response->set_errorcode(errno);
@@ -751,7 +751,7 @@ void RunServer(string remote_storage_dir_path) {
         return;
     }
 
-    cout << "Running Storage at: " << remote_storage_dir_path << endl;
+    //cout << "Running Storage at: " << remote_storage_dir_path << endl;
 
     // Create GRPC Server
     string server_address = getServerIP() + ":50051";
