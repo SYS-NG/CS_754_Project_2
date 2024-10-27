@@ -583,7 +583,7 @@ class FuseGrpcClient {
                             std::string write_verifier = response.write_verifier();
 
                             // Store the write command and write_verifier
-                            // WriteCommand command;
+                            WriteCommand command;
                             command.path = path;
                             command.content = std::string(buf, size);
                             command.size = size;
