@@ -8,6 +8,8 @@
 #include <thread>
 #include <mutex>
 #include <sys/ioctl.h>
+#include <cstring>
+#include <numeric>
 
 #define SET_RUN_SYNC _IO('f', 2)
 
@@ -272,43 +274,117 @@ double measureLargeReadLatency(const char* largeFilePath) {
     return latency.count();
 }
 
-vector<double> latencies; // Vector to store latencies
-mutex latencyMutex; // Mutex for protecting access to latencies
+vector<double> createLatencies;
+vector<double> writeLatencies;
+vector<double> readLatencies;
+vector<double> deleteLatencies;
+mutex latencyMutex;
 
-void readFile(const char* filePath, size_t bufferSize, int threadId) {
-    char buffer[bufferSize];
-    int fd = open(filePath, O_RDONLY);
+void createFile(const char* filePath) {
+    auto start = chrono::high_resolution_clock::now();
+    
+    int fd = open(filePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
-        std::cerr << "Failed to open file: " << filePath << std::endl;
-        {
-            std::lock_guard<std::mutex> lock(latencyMutex);
-            latencies[threadId] = -1.0;
-        }
+        cerr << "Failed to create file: " << filePath << endl;
+        return;
+    }
+    
+    close(fd);
+    
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double, std::milli> latency = end - start;
+
+    lock_guard<mutex> lock(latencyMutex);
+    createLatencies.push_back(latency.count());
+}
+
+void writeFile(const char* filePath, const char* data) {
+    auto start = chrono::high_resolution_clock::now();
+
+    int fd = open(filePath, O_WRONLY);
+    if (fd == -1) {
+        cerr << "Failed to open file for writing: " << filePath << endl;
         return;
     }
 
-    auto start = chrono::high_resolution_clock::now();
-    ssize_t bytesRead = read(fd, buffer, bufferSize);
-    auto end = chrono::high_resolution_clock::now();
+    ssize_t bytesWritten = write(fd, data, strlen(data));
+    if (bytesWritten == -1) {
+        cerr << "Failed to write to file: " << filePath << endl;
+    }
 
     close(fd);
 
-    std::chrono::duration<double, std::milli> latency = end - start;
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double, std::milli> latency = end - start;
 
-    {
-        std::lock_guard<std::mutex> lock(latencyMutex);
-        latencies[threadId] = latency.count();
-    }
-    
-    return;
+    lock_guard<mutex> lock(latencyMutex);
+    writeLatencies.push_back(latency.count());
 }
 
-double measureConcurrentReads(const char* filePath, size_t bufferSize, int numThreads) {
+void readFile(const char* filePath, size_t bufferSize) {
+    char buffer[bufferSize];
+
+    auto start = chrono::high_resolution_clock::now();
+    int fd = open(filePath, O_RDONLY);
+    if (fd == -1) {
+        cerr << "Failed to open file for reading: " << filePath << endl;
+        return;
+    }
+
+    ssize_t bytesRead = read(fd, buffer, bufferSize);
+    if (bytesRead == -1) {
+        cerr << "Failed to read from file: " << filePath << endl;
+    }
+
+    close(fd);
+
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double, std::milli> latency = end - start;
+
+    lock_guard<mutex> lock(latencyMutex);
+    readLatencies.push_back(latency.count());
+}
+
+void deleteFile(const char* filePath) {
+    auto start = chrono::high_resolution_clock::now();
+
+    if (unlink(filePath) != 0) {
+        cerr << "Failed to delete file: " << filePath << endl;
+    }
+
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double, std::milli> latency = end - start;
+
+    lock_guard<mutex> lock(latencyMutex);
+    deleteLatencies.push_back(latency.count());
+}
+
+void performFileOperations(int threadId, const vector<char>& buffer, int repeatTimesPerThread) {
+    // Create a unique file name for this thread
+    string filePath = "testfile_" + to_string(threadId) + ".txt";
+    
+    for (int i = 0; i < repeatTimesPerThread; i++)
+    {
+        createFile(filePath.c_str());
+        writeFile(filePath.c_str(), buffer.data());
+        readFile(filePath.c_str(), buffer.size());
+        deleteFile(filePath.c_str());
+    }
+}
+
+vector<double> measureFileOperations(size_t bufferSize, int numThreads, int repeatTimesPerThread) {
+    // Clear the latency vectors for fresh measurements
+    createLatencies.clear();
+    writeLatencies.clear();
+    readLatencies.clear();
+    deleteLatencies.clear();
+
+    vector<char> buffer(bufferSize, 'A');
+
     vector<thread> threads;
-    latencies.resize(numThreads);
 
     for (int threadId = 0; threadId < numThreads; threadId++) {
-        threads.emplace_back(readFile, filePath, bufferSize, threadId); // Pass client ID to the thread function
+        threads.emplace_back(performFileOperations, threadId, buffer, repeatTimesPerThread);
     }
 
     // Wait for all threads to finish
@@ -316,17 +392,15 @@ double measureConcurrentReads(const char* filePath, size_t bufferSize, int numTh
         t.join();
     }
 
-    // Output the latencies for each thread
-    cout << "\nLatencies for each client:" << endl;
-    
-    double sum = 0;
-    for (const auto& latencyMeasure : latencies) {
-        sum += latencyMeasure;
-        cout << latencyMeasure << endl;
-    }
-    double averageLatency = sum / latencies.size(); 
+    vector<double> averageLatencies(4); // Create a vector to hold average latencies
+    cout << "Operations Cycle Repeated: " << createLatencies.size() << endl;
 
-    return averageLatency;
+    averageLatencies[0] = createLatencies.empty() ? 0.0 : accumulate(createLatencies.begin(), createLatencies.end(), 0.0) / createLatencies.size();
+    averageLatencies[1] = writeLatencies.empty() ? 0.0 : accumulate(writeLatencies.begin(), writeLatencies.end(), 0.0) / writeLatencies.size();
+    averageLatencies[2] = readLatencies.empty() ? 0.0 : accumulate(readLatencies.begin(), readLatencies.end(), 0.0) / readLatencies.size();
+    averageLatencies[3] = deleteLatencies.empty() ? 0.0 : accumulate(deleteLatencies.begin(), deleteLatencies.end(), 0.0) / deleteLatencies.size();
+
+    return averageLatencies;
 }
 
 // Function to test recovery after crash with parameterized write counts
@@ -395,6 +469,25 @@ int main() {
     const char* testLargeFilePath = "./mnt/test_1GB_file";
     const char* testFilePath2 = "./mnt/testfile2";
 
+    // Used for a lot of tests
+    size_t bufferSize = 4096;
+
+    // Just for operations testing
+    int repeatTimesPerThread = 10;
+
+    vector<int> numThreadTrials = {1, 5, 10, 50, 100, 500};
+
+    for (auto &numThreads : numThreadTrials)
+    {
+        vector<double> avgLatencies = measureFileOperations(bufferSize, numThreads, repeatTimesPerThread);
+        cout << "\nAverage Latencies (ms):" << endl;
+        cout << "Create: " << avgLatencies[0] << " ms" << endl;
+        cout << "Write: " << avgLatencies[1] << " ms" << endl;
+        cout << "Read: " << avgLatencies[2] << " ms" << endl;
+        cout << "Delete: " << avgLatencies[3] << " ms" << endl;
+    }
+    
+
     // Test mkdir
     double mkdirLatency = measureMkdirLatency(testDirPath);
     if (mkdirLatency >= 0) {
@@ -419,8 +512,6 @@ int main() {
         std::cout << "Open latency: " << openLatency << " ms" << std::endl;
     }
 
-    
-    size_t bufferSize = 4096;
     // The order of create, write, and read matters
     // Test write
     double writeLatency = measureWriteLatency(testFilePath, bufferSize);
@@ -432,12 +523,6 @@ int main() {
     double readLatency = measureReadLatency(testFilePath, bufferSize);
     if (readLatency >= 0) {
         std::cout << "Read latency: " << readLatency << " ms" << std::endl;
-    }
-    
-    // Test Concurrent Read
-    double averageConcurrentReadLatency = measureConcurrentReads(testFilePath, bufferSize, 10);
-    if (averageConcurrentReadLatency >= 0) {
-        std::cout << "Average Concurrent Read latency: " << averageConcurrentReadLatency << " ms" << std::endl;
     }
 
     // Test readdir
