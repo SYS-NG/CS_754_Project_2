@@ -431,7 +431,7 @@ class FuseGrpcClient {
                     // Configure gRPC client context and response
                     ClientContext context;
                     NfsCommitResponse response;
-                    auto deadline = chrono::system_clock::now() + chrono::seconds(10);
+                    auto deadline = chrono::system_clock::now() + chrono::seconds(60);
                     context.set_deadline(deadline);
 
                     // Make the gRPC call
@@ -581,7 +581,7 @@ class FuseGrpcClient {
                         if (response.success()) {
                             int64_t len = response.bytes_written();
                             std::string write_verifier = response.write_verifier();
-
+                            
                             // Store the write command and write_verifier
                             WriteCommand command;
                             command.path = path;
@@ -590,12 +590,16 @@ class FuseGrpcClient {
                             command.offset = offset;
                             command.write_verifier = write_verifier;
 
-                            if (instance_->write_commands_[path].empty()){
-                                instance_->write_commands_[path].reserve(1500);
-                            }
+                            // Store the write command and write_verifier
+                            // WriteCommand command;
+                            // command.path = path;
+                            // command.content = std::string(buf, size);
+                            // command.size = size;
+                            // command.offset = offset;
+                            // command.write_verifier = write_verifier;
 
-                            instance_->write_commands_[path].push_back(command);
-
+                            // instance_->write_commands_[path].push_back(command);
+                            instance_->write_commands_[path].push_back(std::move(command));
                             instance_->write_verifiers_[path].insert(write_verifier);
 
                             return len; // Operation successful, return bytes written

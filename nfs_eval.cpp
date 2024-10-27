@@ -180,6 +180,66 @@ double measureCreateLatency(const char* filePath, mode_t mode = 0644) {
     return latency.count();
 }
 
+
+// double measureLargeWriteLatency(const char* largeFilePath) {
+//     const size_t totalFileSize = 1 * 1024 * 1024 * 1024; // 1 GB
+//     const size_t totalWrites = 1024; // Total of 1024 writes
+//     const size_t writesPerCycle = 16; // Close file after every 16 writes
+//     const size_t bufferSize = totalFileSize / totalWrites; // 1 MB per write
+//     char buffer[bufferSize];
+//     std::fill_n(buffer, bufferSize, 'A'); // Fill the buffer with the character 'A'
+
+//     auto start = std::chrono::high_resolution_clock::now();
+    
+//     size_t totalWritten = 0;
+//     int fd = -1;
+
+//     for (size_t i = 0; i < totalWrites; ++i) {
+//         // Open a new file descriptor every 16 writes
+//         if (i % writesPerCycle == 0) {
+//             if (fd != -1) {
+//                 close(fd);
+//             }
+//             fd = open(largeFilePath, O_WRONLY | O_CREAT | (i == 0 ? O_TRUNC : 0), 0644);
+//             if (fd == -1) {
+//                 std::cerr << "Failed to create file: " << largeFilePath << std::endl;
+//                 return -1;
+//             }
+//         }
+
+//         // Write buffer data to file
+//         ssize_t bytesWritten = write(fd, buffer, bufferSize);
+//         if (bytesWritten < 0) {
+//             std::cerr << "Failed to write to file: " << largeFilePath << std::endl;
+//             std::cerr << "Error code: " << errno << std::endl;
+//             close(fd);
+//             return -1;
+//         }
+
+//         totalWritten += bytesWritten;
+
+//         // End the test if 1 GB of data has been written
+//         if (totalWritten >= totalFileSize) {
+//             break;
+//         }
+//     }
+
+//     auto end1 = std::chrono::high_resolution_clock::now();
+//     std::chrono::duration<double, std::milli> latency = end1 - start;
+//     std::cout << "Total time taken: " << latency.count() << " ms" << std::endl;
+
+//     // Close the last opened file descriptor
+//     if (fd != -1) {
+//         close(fd);
+//     }
+
+//     auto end = std::chrono::high_resolution_clock::now();
+
+//     std::cout << "Successfully wrote 1 GB in 1024 writes with periodic closes: " << largeFilePath << std::endl;
+//     std::chrono::duration<double, std::milli> latency = end - start;
+//     return latency.count();
+// }
+
 // Large read and write are expected to use 1GB
 double measureLargeWriteLatency(const char* largeFilePath) {
     const size_t fileSize = 1 * 1024 * 1024 * 1024; // 1 GB

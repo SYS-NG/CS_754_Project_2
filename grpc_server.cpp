@@ -487,7 +487,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             // cout << "NfsOpen called with path: " << path << endl; // Debug log
 
             // Open the file and get the file descriptor
-            int file_descriptor = open((directory_path_ + path).c_str(), flags);
+            int file_descriptor = open((directory_path_ + path).c_str(), flags | O_DSYNC);
             if (file_descriptor < 0) {
                 cout << "File not found: " << path << endl; // Debug log
                 response->set_success(false);
@@ -556,9 +556,6 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             command.content = data;
             
             // Store the write command in the file handle map
-            if (file_handle_map_[path].empty()){
-                file_handle_map_[path].reserve(1500);
-            }
 
             file_handle_map_[path].push_back(command);
 
