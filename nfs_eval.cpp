@@ -276,7 +276,7 @@ double measureLargeWriteLatency(const char* largeFilePath) {
 
     auto end1 = std::chrono::high_resolution_clock::now();
 
-    cout <<"time taken to write 1GB file: " << std::chrono::duration<double, std::milli>(end1 - start).count() << " ms" << endl;
+    // cout <<"time taken to write 1GB file: " << std::chrono::duration<double, std::milli>(end1 - start).count() << " ms" << endl;
 
     close(fd);
     auto end = std::chrono::high_resolution_clock::now();
