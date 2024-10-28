@@ -369,10 +369,12 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             //     return Status::OK;
             // }
 
-            // Open the file and get the file descriptor
             int file_descriptor = open((directory_path_ + path).c_str(), flags);
             if (file_descriptor < 0) {
                 cout << "File not found: " << path << endl; // Debug log
+                cout << "Error: " << strerror(errno) << endl;
+                cout << "flags: " << flags << endl;
+                cout << "Error code: " << file_descriptor << endl;
                 response->set_success(false);
                 response->set_errorcode(errno);
                 response->set_message("File not found");
@@ -483,6 +485,8 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const std::string content = request->content();
             int64_t size = request->size();
             off_t offset = request->offset(); 
+            
+            cout << "NfsWrite called with content: " << path << endl; // Debug log
 
             // cout << "NfsOpen called with path: " << path << endl; // Debug log
 
@@ -546,6 +550,7 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             const std::string data = request->content();
             int64_t offset = request->offset();
             int32_t size = request->size();
+            cout << "Batch write called with content: " << data << endl; // Debug log
 
             // cout << "NfsWriteAsync invoked with fh: " << path 
             //      << ", data size: " << size << ", and offset: " << offset << endl; // Debug log
@@ -564,6 +569,37 @@ class grpcServices final : public grpc_service::GrpcService::Service {
             // cout << size << endl;
             response->set_bytes_written(size); // Return the number of bytes intended to be written
             response->set_write_verifier(write_verifier_); // Return the current write verifier
+            return Status::OK;
+        }
+
+        Status NfsRename(
+            ServerContext* context,
+            const grpc_service::NfsRenameRequest* request,
+            grpc_service::NfsRenameResponse* response
+        ) override {
+            const std::string& from = request->from_path();
+            const std::string& to = request->to_path();
+            int flags = request->flags();
+
+            if (flags & RENAME_NOREPLACE) {
+                if (access((directory_path_ + to).c_str(), F_OK) == 0) {
+                    response->set_success(false);
+                    response->set_errorcode(EEXIST);  
+                    response->set_message("Target file exists; rename aborted due to RENAME_NOREPLACE flag.");
+                    cout << "Target file exists; rename aborted due to RENAME_NOREPLACE flag." << endl;
+                    return Status::OK;
+                }
+            }
+
+            if (rename((directory_path_ + from).c_str(), (directory_path_ + to).c_str()) == 0) {
+                response->set_success(true);
+                response->set_message("File renamed successfully");
+            } else {
+                response->set_success(false);
+                response->set_errorcode(errno);
+                response->set_message("Failed to rename file");
+                cout << "Failed to rename file: " << strerror(errno) << endl;
+            }
             return Status::OK;
         }
 

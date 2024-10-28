@@ -36,6 +36,7 @@ class FuseGrpcClient {
         static FuseGrpcClient* instance_;
         std::unordered_map<std::string, std::vector<WriteCommand>> write_commands_;
         std::unordered_map<std::string, std::unordered_set<std::string>> write_verifiers_;
+        std::unordered_map<std::string, int> path_flags_map;
         // string target_;
 
     public:
@@ -58,6 +59,10 @@ class FuseGrpcClient {
             } else {
                 cerr << "Ping failed: " << status.error_code() << " - " << status.error_message() << endl;
             }
+        }
+
+        static void record_flag(const std::string& path, int flags) {
+            instance_->path_flags_map[path] = flags;
         }
 
         static int my_ioctl(const char *path, int cmd, void *arg, struct fuse_file_info *fi, unsigned int flags, void *data) {
@@ -370,6 +375,7 @@ class FuseGrpcClient {
                 if (status.ok()) {
                     if (response.success()) {
                         fi->fh = -1;
+                        record_flag(path, fi->flags);
                         return 0; // File opened successfully
                     } else {
                         cerr << "gRPC NfsOpen failed: " << response.message() << endl;
@@ -421,7 +427,8 @@ class FuseGrpcClient {
                     // Create NfsCommitRequest
                     NfsCommitRequest request;
                     request.set_path(path);
-                    request.set_flags(O_WRONLY);
+                    instance_->path_flags_map[path] &= ~O_EXCL;
+                    request.set_flags(instance_->path_flags_map[path]);
                     
                     for (const auto& ver : instance_->write_verifiers_[path]) {
                         std::cout << "[DEBUG] Adding write_verifier: " << ver << std::endl;
@@ -784,6 +791,63 @@ class FuseGrpcClient {
             return -EIO; // Input/output error for failed retries
         }
 
+        static int nfs_rename(const char *from, const char *to, unsigned int flags) {
+            cout << "Renaming file from: " << from << " to: " << to << endl;
+
+            int max_retries = 3;  // Maximum number of retries
+            int retry_count = 0;  // Current retry count
+            int backoff_time = 1; // Initial backoff time in seconds
+
+            while (retry_count < max_retries) {
+                // Create gRPC client context and request/response objects
+                ClientContext context;
+                NfsRenameRequest request;
+                NfsRenameResponse response;
+
+                auto deadline = chrono::system_clock::now() + chrono::seconds(1);
+                context.set_deadline(deadline);
+
+                // Prepare request data
+                request.set_from_path(from);
+                request.set_to_path(to);
+                request.set_flags(flags);
+
+                // Make the gRPC call
+                Status status = instance_->stub_->NfsRename(&context, request, &response);
+
+                if (status.ok()) {
+                    if (response.success()) {
+                        cout << "File renamed successfully from: " << from << " to: " << to << endl;
+                        return 0; // Rename successful
+                    } else {
+                        cerr << "gRPC NfsRename failed: " << response.message() << endl;
+                        return -response.errorcode(); // Return the server error code
+                    }
+                } else {
+                    cerr << "nfs_rename gRPC communication failed: " << status.error_code() << " - " << status.error_message() << endl;
+
+                    // Retry on timeout or transient error
+                    if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
+                        status.error_code() == grpc::StatusCode::UNAVAILABLE) {
+                        retry_count++;
+                        cout << "Retrying " << retry_count << "/" << max_retries << " after " << backoff_time << " second(s)..." << endl;
+
+                        // Wait for a backoff period before retrying
+                        this_thread::sleep_for(chrono::seconds(backoff_time));
+
+                        // Increase backoff time for the next retry
+                        backoff_time *= 2;
+                    } else {
+                        // For other errors, do not retry
+                        return -EIO;
+                    }
+                }
+            }
+
+            cerr << "Failed to rename file after " << max_retries << " retries." << endl;
+            return -EIO; // Input/output error for failed retries
+        }
+
         static int nfs_unlink(const char *path) {
             cout << "Unlinking file: " << path << endl;
 
@@ -941,6 +1005,7 @@ class FuseGrpcClient {
                 if (status.ok()) {
                     if (response.success()) {
                         cout << "File created successfully: " << path << endl;
+                        record_flag(path, fi->flags);
                         fi->fh = -1;
                         return 0; // File created successfully
                     } else {
@@ -1123,6 +1188,7 @@ class FuseGrpcClient {
                 .mkdir   = nfs_mkdir,
                 .unlink  = nfs_unlink,
                 .rmdir   = nfs_rmdir,
+                .rename  = nfs_rename,
                 .truncate = nfs_truncate,
                 .open    = nfs_open,
                 .read    = nfs_read,

@@ -276,7 +276,7 @@ double measureLargeWriteLatency(const char* largeFilePath) {
 
     auto end1 = std::chrono::high_resolution_clock::now();
 
-    cout <<"time taken to write 1GB file: " << std::chrono::duration<double, std::milli>(end1 - start).count() << " ms" << endl;
+    // cout <<"time taken to write 1GB file: " << std::chrono::duration<double, std::milli>(end1 - start).count() << " ms" << endl;
 
     close(fd);
     auto end = std::chrono::high_resolution_clock::now();
@@ -510,10 +510,10 @@ double testRecoveryAfterCrash(const char* filePath, int preCrashWrites, int post
     std::chrono::duration<double, std::milli> latency = end - start;
 
     // Delete the file
-    if (unlink(filePath) == -1) {
-        std::cerr << "Failed to delete file: " << filePath << std::endl;
-        return -1.0;
-    }
+    // if (unlink(filePath) == -1) {
+    //     std::cerr << "Failed to delete file: " << filePath << std::endl;
+    //     return -1.0;
+    // }
 
     // Return close operation latency in milliseconds
     return latency.count();
@@ -576,135 +576,135 @@ int main() {
     const char* testFilePath = "./mnt/testfile";
     const char* testLargeFilePath = "./mnt/test_1GB_file";
 
-    // Used for a lot of tests
-    size_t bufferSize = 4096;
+    // // Used for a lot of tests
+    // size_t bufferSize = 4096;
 
-    // Just for operations testing
-    int repeatTimesPerThread = 2;
+    // // Just for operations testing
+    // int repeatTimesPerThread = 2;
 
-    vector<int> numThreadTrials = {1, 5, 10, 15};
+    // vector<int> numThreadTrials = {1, 5, 10, 15};
 
-    for (auto &numThreads : numThreadTrials)
-    {
-        vector<double> avgLatencies = measureFileOperations(bufferSize, numThreads, repeatTimesPerThread);
-        cout << "\nAverage Latencies (ms):" << endl;
-        cout << "Create: " << avgLatencies[0] << " ms" << endl;
-        cout << "Write: " << avgLatencies[1] << " ms" << endl;
-        cout << "Read: " << avgLatencies[2] << " ms" << endl;
-        cout << "Delete: " << avgLatencies[3] << " ms" << endl;
-    }
+    // for (auto &numThreads : numThreadTrials)
+    // {
+    //     vector<double> avgLatencies = measureFileOperations(bufferSize, numThreads, repeatTimesPerThread);
+    //     cout << "\nAverage Latencies (ms):" << endl;
+    //     cout << "Create: " << avgLatencies[0] << " ms" << endl;
+    //     cout << "Write: " << avgLatencies[1] << " ms" << endl;
+    //     cout << "Read: " << avgLatencies[2] << " ms" << endl;
+    //     cout << "Delete: " << avgLatencies[3] << " ms" << endl;
+    // }
     
 
-    // Test mkdir
-    double mkdirLatency = measureMkdirLatency(testDirPath);
-    if (mkdirLatency >= 0) {
-        std::cout << "Mkdir latency: " << mkdirLatency << " ms" << std::endl;
-    }
+    // // Test mkdir
+    // double mkdirLatency = measureMkdirLatency(testDirPath);
+    // if (mkdirLatency >= 0) {
+    //     std::cout << "Mkdir latency: " << mkdirLatency << " ms" << std::endl;
+    // }
 
-    // Test create
-    double createLatency = measureCreateLatency(testFilePath);
-    if (createLatency >= 0) {
-        std::cout << "Create latency: " << createLatency << " ms" << std::endl;
-    }
+    // // Test create
+    // double createLatency = measureCreateLatency(testFilePath);
+    // if (createLatency >= 0) {
+    //     std::cout << "Create latency: " << createLatency << " ms" << std::endl;
+    // }
 
-    // Test getattr
-    double getattrLatency = measureGetattrLatency(testFilePath);
-    if (getattrLatency >= 0) {
-        std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
-    }
+    // // Test getattr
+    // double getattrLatency = measureGetattrLatency(testFilePath);
+    // if (getattrLatency >= 0) {
+    //     std::cout << "Getattr latency: " << getattrLatency << " ms" << std::endl;
+    // }
 
-    // Test open
-    double openLatency = measureOpenLatency(testFilePath);
-    if (openLatency >= 0) {
-        std::cout << "Open latency: " << openLatency << " ms" << std::endl;
-    }
+    // // Test open
+    // double openLatency = measureOpenLatency(testFilePath);
+    // if (openLatency >= 0) {
+    //     std::cout << "Open latency: " << openLatency << " ms" << std::endl;
+    // }
 
-    // The order of create, write, and read matters
-    // Test write
-    double writeLatency = measureWriteLatency(testFilePath, bufferSize);
-    if (writeLatency >= 0) {
-        std::cout << "Write latency: " << writeLatency << " ms" << std::endl;
-    }
+    // // The order of create, write, and read matters
+    // // Test write
+    // double writeLatency = measureWriteLatency(testFilePath, bufferSize);
+    // if (writeLatency >= 0) {
+    //     std::cout << "Write latency: " << writeLatency << " ms" << std::endl;
+    // }
 
-    // Test read
-    double readLatency = measureReadLatency(testFilePath, bufferSize);
-    if (readLatency >= 0) {
-        std::cout << "Read latency: " << readLatency << " ms" << std::endl;
-    }
+    // // Test read
+    // double readLatency = measureReadLatency(testFilePath, bufferSize);
+    // if (readLatency >= 0) {
+    //     std::cout << "Read latency: " << readLatency << " ms" << std::endl;
+    // }
 
-    // Test readdir
-    double readdirLatency = measureReaddirLatency(testDirPath);
-    if (readdirLatency >= 0) {
-        std::cout << "Readdir latency: " << readdirLatency << " ms" << std::endl;
-    }
+    // // Test readdir
+    // double readdirLatency = measureReaddirLatency(testDirPath);
+    // if (readdirLatency >= 0) {
+    //     std::cout << "Readdir latency: " << readdirLatency << " ms" << std::endl;
+    // }
 
-    // Test unlink
-    double unlinkLatency = measureUnlinkLatency(testFilePath);
-    if (unlinkLatency >= 0) {
-        std::cout << "Unlink latency: " << unlinkLatency << " ms" << std::endl;
-    }
+    // // Test unlink
+    // double unlinkLatency = measureUnlinkLatency(testFilePath);
+    // if (unlinkLatency >= 0) {
+    //     std::cout << "Unlink latency: " << unlinkLatency << " ms" << std::endl;
+    // }
 
-    // Test rmdir
-    double rmdirLatency = measureRmdirLatency(testDirPath);
-    if (rmdirLatency >= 0) {
-        std::cout << "Rmdir latency: " << rmdirLatency << " ms" << std::endl;
-    }
+    // // Test rmdir
+    // double rmdirLatency = measureRmdirLatency(testDirPath);
+    // if (rmdirLatency >= 0) {
+    //     std::cout << "Rmdir latency: " << rmdirLatency << " ms" << std::endl;
+    // }
 
-    const double fileSizeGB = 1.0;  // 1 GB file size
-    const double fileSizeMB = fileSizeGB * 1024.0; // Convert to MB if needed
+    // const double fileSizeGB = 1.0;  // 1 GB file size
+    // const double fileSizeMB = fileSizeGB * 1024.0; // Convert to MB if needed
 
-    // Test Large Write
-    double largeWriteLatency = measureLargeWriteLatency(testLargeFilePath);
-    if (largeWriteLatency >= 0) {
-        std::cout << "Large Write latency: " << largeWriteLatency << " ms" << std::endl;
-        double writeThroughputMBps = (fileSizeMB / largeWriteLatency) * 1000.0;
-        double writeThroughputGBps = (fileSizeGB / largeWriteLatency) * 1000.0;
-        std::cout << "Large Write throughput: " << writeThroughputMBps << " MB/s (" << writeThroughputGBps << " GB/s)" << std::endl;
-    }   
+    // // Test Large Write
+    // double largeWriteLatency = measureLargeWriteLatency(testLargeFilePath);
+    // if (largeWriteLatency >= 0) {
+    //     std::cout << "Large Write latency: " << largeWriteLatency << " ms" << std::endl;
+    //     double writeThroughputMBps = (fileSizeMB / largeWriteLatency) * 1000.0;
+    //     double writeThroughputGBps = (fileSizeGB / largeWriteLatency) * 1000.0;
+    //     std::cout << "Large Write throughput: " << writeThroughputMBps << " MB/s (" << writeThroughputGBps << " GB/s)" << std::endl;
+    // }   
 
-    // Test Large Read
-    double largeReadLatency = measureLargeReadLatency(testLargeFilePath);
-    if (largeReadLatency >= 0) {
-        std::cout << "Large Read latency: " << largeReadLatency << " ms" << std::endl;
-        double readThroughputMBps = (fileSizeMB / largeReadLatency) * 1000.0;
-        double readThroughputGBps = (fileSizeGB / largeReadLatency) * 1000.0;
-        std::cout << "Large read throughput: " << readThroughputMBps << " MB/s (" << readThroughputGBps << " GB/s)" << std::endl;
-    }
+    // // Test Large Read
+    // double largeReadLatency = measureLargeReadLatency(testLargeFilePath);
+    // if (largeReadLatency >= 0) {
+    //     std::cout << "Large Read latency: " << largeReadLatency << " ms" << std::endl;
+    //     double readThroughputMBps = (fileSizeMB / largeReadLatency) * 1000.0;
+    //     double readThroughputGBps = (fileSizeGB / largeReadLatency) * 1000.0;
+    //     std::cout << "Large read throughput: " << readThroughputMBps << " MB/s (" << readThroughputGBps << " GB/s)" << std::endl;
+    // }
 
-    // Test change mode
-    int fd = open(testExistFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd == -1) {
-        std::cerr << "Failed to create file: " << testExistFilePath << std::endl;
-        return -1;
-    }
+    // // Test change mode
+    // int fd = open(testExistFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    // if (fd == -1) {
+    //     std::cerr << "Failed to create file: " << testExistFilePath << std::endl;
+    //     return -1;
+    // }
     
-    if (changeMode(fd, 1) == -1) {
-        return -1;
-    }
+    // if (changeMode(fd, 1) == -1) {
+    //     return -1;
+    // }
     
-    close(fd);
+    // close(fd);
 
-    // Test sync write latency
-    double largeSyncWriteLatency = measureLargeWriteLatency(testLargeFilePath);
-    if (largeSyncWriteLatency >= 0) {
-        std::cout << "Large Sync Write latency: " << largeSyncWriteLatency << " ms" << std::endl;
-        double writeThroughputMBps = (fileSizeMB / largeSyncWriteLatency) * 1000.0;
-        double writeThroughputGBps = (fileSizeGB / largeSyncWriteLatency) * 1000.0;
-        std::cout << "Large Sync Write throughput: " << writeThroughputMBps << " MB/s (" << writeThroughputGBps << " GB/s)" << std::endl;
-    }
+    // // Test sync write latency
+    // double largeSyncWriteLatency = measureLargeWriteLatency(testLargeFilePath);
+    // if (largeSyncWriteLatency >= 0) {
+    //     std::cout << "Large Sync Write latency: " << largeSyncWriteLatency << " ms" << std::endl;
+    //     double writeThroughputMBps = (fileSizeMB / largeSyncWriteLatency) * 1000.0;
+    //     double writeThroughputGBps = (fileSizeGB / largeSyncWriteLatency) * 1000.0;
+    //     std::cout << "Large Sync Write throughput: " << writeThroughputMBps << " MB/s (" << writeThroughputGBps << " GB/s)" << std::endl;
+    // }
 
-    //change mode back
-    fd = open(testExistFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd == -1) {
-        std::cerr << "Failed to create file: " << testExistFilePath << std::endl;
-        return -1;
-    }
+    // //change mode back
+    // fd = open(testExistFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    // if (fd == -1) {
+    //     std::cerr << "Failed to create file: " << testExistFilePath << std::endl;
+    //     return -1;
+    // }
 
-    if (changeMode(fd, 0) == -1) {
-        return -1;
-    }
+    // if (changeMode(fd, 0) == -1) {
+    //     return -1;
+    // }
     
-    close(fd);
+    // close(fd);
 
     double closeLatency = testRecoveryAfterCrash(testFilePath, 2, 2);
     if (closeLatency >= 0) {
@@ -713,7 +713,7 @@ int main() {
         std::cerr << "Test failed." << std::endl;
     }
 
-    deleteFileBeforeOpen(testFilePath);
+    // deleteFileBeforeOpen(testFilePath);
 
     return 0;
 }

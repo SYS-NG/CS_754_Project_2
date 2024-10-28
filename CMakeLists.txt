@@ -4,15 +4,15 @@ project(grpc_server_client)
 set(CMAKE_CXX_STANDARD 14)
 
 # Add this line to help find packages installed by vcpkg
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "$ENV{HOME}/vcpkg/installed/x64-linux")
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "$ENV{HOME}/.local/vcpkg/installed/x64-linux")
 
 # Find required packages
 find_package(gRPC CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 
 # Explicitly set FUSE3 paths
-set(FUSE_INCLUDE_DIR "$ENV{HOME}/vcpkg/installed/x64-linux/include")
-set(FUSE_LIBRARY "$ENV{HOME}/vcpkg/installed/x64-linux/lib/libfuse3.a")
+set(FUSE_INCLUDE_DIR "$ENV{HOME}/.local/vcpkg/installed/x64-linux/include")
+set(FUSE_LIBRARY "$ENV{HOME}/.local/vcpkg/installed/x64-linux/lib/libfuse3.a")
 # Generate gRPC and Protobuf files
 set(PROTO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/grpc_service.proto")
 get_filename_component(PROTO_FILE_ABS "${PROTO_FILE}" ABSOLUTE)
