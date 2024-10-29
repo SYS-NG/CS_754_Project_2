@@ -1210,7 +1210,7 @@ FuseGrpcClient* FuseGrpcClient::instance_ = nullptr;
 int main(int argc, char** argv) {
     // Check if the first argument is provided
     if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " <server_ip:port> [additional_arguments]" << endl;
+        cerr << "Usage: " << argv[0] << " <server_ip:port> [-sync] [additional_arguments]" << endl;
         return 1;
     }
 
@@ -1222,13 +1222,27 @@ int main(int argc, char** argv) {
 
     auto channel = grpc::CreateCustomChannel(target_str, grpc::InsecureChannelCredentials(), args);
 
+    // Prepare a new argument list for FUSE without `-sync`
+    vector<char*> fuse_args;
+    fuse_args.push_back(argv[0]); // program name
+
+    for (int i = 2; i < argc; ++i) {
+        if (string(argv[i]) == "-sync") {
+            RUN_SYNC = true; // Set the flag if -sync is present
+        } else {
+            fuse_args.push_back(argv[i]); // Add other args to fuse_args
+        }
+    }
+
+    // Adjust argc and argv for FUSE
+    int fuse_argc = fuse_args.size();
+    char** fuse_argv = fuse_args.data();
+
     // Create the gRPC client
     FuseGrpcClient client(channel, target_str);
-    // FuseGrpcClient client(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()), target_str);
-    
-    // Pass the rest of the arguments to run_fuse_main
-    // Reduce the argument count by 1, and move the argument pointer to the next arg
-    client.run_fuse_main(argc - 1, argv + 1);
+
+    // Pass the filtered arguments to run_fuse_main
+    client.run_fuse_main(fuse_argc, fuse_argv);
 
     return 0;
 }
